@@ -56,7 +56,6 @@ async def main(args):
     eng = create_engine(DB_DANAIDES)
     found = {}
     addresses = {}
-    addresses['03a6157aeb609e225d7e1000c91eb5b54fd5867ebbbbfb7e01f2abbdfd469ef07f'] = []
 
     # find newly unspent boxes
     sql = f'''
@@ -65,7 +64,7 @@ async def main(args):
         where is_unspent = true
             and box_id not in (
                 select box_id
-                from addresses
+                from addresses_staking
             )
     '''
     
@@ -164,20 +163,20 @@ async def main(args):
     df_addresses.to_sql('checkpoint_addresses', eng, if_exists='replace')
 
     # stake keys
-    df_stakekeys = pd.DataFrame().from_dict({
+    df_keys_staking = pd.DataFrame().from_dict({
         'box_id': list(found.keys()), 
         'stakekey_id': [x['stakeKeyId'] for x in found.values()],
         'stake_amount': [x['stakeAmount'] for x in found.values()],
         'stake_token_id': [x['stake_token_id'] for x in found.values()],
     })
-    df_stakekeys.to_sql('checkpoint_stakekeys', eng, if_exists='replace')
+    df_keys_staking.to_sql('checkpoint_keys_staking', eng, if_exists='replace')
 
     with eng.begin() as con:
         # addresses
         sql = f'''
             -- remove spent boxes from addresses
-            delete from addresses
-            using addresses a
+            delete from addresses_staking
+            using addresses_staking a
                 left join boxes b on b.box_id = a.box_id
             where b.is_unspent = true
                 and b.box_id is null
@@ -185,20 +184,20 @@ async def main(args):
         con.execute(sql)
 
         sql = f'''
-            insert into addresses (address, token_id, amount, box_id)
+            insert into addresses_staking (address, token_id, amount, box_id)
                 select address, token_id, amount, box_id
                 from checkpoint_addresses
                 except
                 select address, token_id, amount, box_id
-                from addresses
+                from addresses_staking
         '''
         con.execute(sql)
 
         # staking
         sql = f'''
-            -- remove spent boxes from stakekeys
-            delete from stakekeys
-            using stakekeys a
+            -- remove spent boxes from keys_staking
+            delete from keys_staking
+            using keys_staking a
                 left join boxes b on b.box_id = a.box_id
             where b.is_unspent = true
                 and b.box_id is null
@@ -206,12 +205,12 @@ async def main(args):
         con.execute(sql)
 
         sql = f'''
-            insert into stakekeys (box_id, stakekey_id, stake_amount, stake_token_id)
+            insert into keys_staking (box_id, stakekey_id, stake_amount, stake_token_id)
                 select box_id, stakekey_id, stake_amount, stake_token_id
-                from checkpoint_stakekeys
+                from keys_staking
                 except
                 select box_id, stakekey_id, stake_amount, stake_token_id
-                from stakekeys
+                from keys_staking
         '''
         con.execute(sql)
 

@@ -108,7 +108,7 @@ async def checkpoint(blk, current_height, unspent, eng):
         'is_unspent': [b!=-1 for b in list(unspent.values())]
     })
     # logger.info(df)
-    df.to_sql('checkpoint', eng, if_exists='replace')
+    df.to_sql('checkpoint_boxes', eng, if_exists='replace')
 
     # execute as transaction
     with eng.begin() as con:
@@ -117,26 +117,18 @@ async def checkpoint(blk, current_height, unspent, eng):
             delete from boxes
             where box_id in (
                 select box_id
-                from checkpoint 
+                from checkpoint_boxes
                 where is_unspent = false
             );
         '''
         con.execute(sql)
-
-        # TODO: need this?
-        # update b set height = c.height 
-        # from boxes = b 
-        #   join checkpoint c on c.box_id = b.box_id 
-        # where b.is_unspent = true 
-        #   and c.is_unspent = true;
-        # delete from checkpoint c where box_id in (select box_id from boxes b and b.is_unspent = true) and c.is_unspent = true
 
         # add unspent
         sql = f'''
             insert into boxes (box_id, height, is_unspent)
                 -- newbies
                 select box_id, height, is_unspent
-                from checkpoint 
+                from checkpoint_boxes
                 where is_unspent = true
                 
                 -- avoid dups
