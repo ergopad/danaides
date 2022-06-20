@@ -1,4 +1,6 @@
 import asyncio
+import time
+
 from cmath import e
 import pandas as pd
 import argparse
@@ -15,6 +17,7 @@ load_dotenv()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
+parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
 args = parser.parse_args()
 
 VERBOSE = False
@@ -94,6 +97,7 @@ async def add_outputs(outputs: dict, unspent: dict, height: int = -1) -> dict:
             if VERBOSE: logger.warning(f'{box_id} exists at height {height} while adding to unspent {e}')
     return new
 
+# upsert current chunk
 async def checkpoint(blk, current_height, unspent, eng):
     suffix = f'Checkpoint at {blk}...'
     printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
@@ -119,12 +123,27 @@ async def checkpoint(blk, current_height, unspent, eng):
         '''
         con.execute(sql)
 
+        # TODO: need this?
+        # update b set height = c.height 
+        # from boxes = b 
+        #   join checkpoint c on c.box_id = b.box_id 
+        # where b.is_unspent = true 
+        #   and c.is_unspent = true;
+        # delete from checkpoint c where box_id in (select box_id from boxes b and b.is_unspent = true) and c.is_unspent = true
+
         # add unspent
         sql = f'''
             insert into boxes (box_id, height, is_unspent)
+                -- newbies
                 select box_id, height, is_unspent
                 from checkpoint 
-                where is_unspent = true;
+                where is_unspent = true
+                
+                -- avoid dups
+                except select box_id, height, is_unspent
+                from boxes
+                where is_unspent = true
+                ;
         '''
         con.execute(sql)
 
@@ -151,38 +170,49 @@ async def main(args):
         eng.execute(sql)
         sql = text(f'''insert into audit_log (height) values (0)''')
         eng.execute(sql)
-    sql = text(f'''select height from audit_log order by created_at desc limit 1''')
-    ht = eng.execute(sql).fetchone()
     
-    # start from saved, if exists
-    starting_height = 0
-    if ht is not None:
-        if ht['height'] > 0:
-            logger.info(f'Existing boxes found...')
-            starting_height = ht['height']+1
-    
-    # create from scratch
-    else:
-        # in the beginning...
-        res = get(f'{NODE_URL}/utxo/genesis', headers=headers, timeout=2)
-        if not res.ok:
-            logger.error(f'unable to determine genesis blocks {res.text}')
+    last_height = -1
+    if args.height > 0:
+        # start from argparse
+        logger.info(f'Rollback requested to block: {args.height}...')
+        last_height = args.height-1
+        sql = text(f'''delete from boxes where height > {args.height}''')
+        eng.execute(sql)
 
-        # init unspent blocks
-        genesis_blocks = res.json()
-        for gen in genesis_blocks:
-            box_id = gen['boxId']
-            unspent[box_id] = True # height 0
+    else:
+        sql = text(f'''select height from audit_log order by created_at desc limit 1''')
+        ht = eng.execute(sql).fetchone()
+        
+        # start from saved, if exists
+        if ht is not None:
+            if ht['height'] > 0:
+                logger.info(f'Existing boxes found...')
+                last_height = ht['height']
+    
+        # if all else fails, from scratch
+        else:
+            # in the beginning...
+            res = get(f'{NODE_URL}/utxo/genesis', headers=headers, timeout=2)
+            if not res.ok:
+                logger.error(f'unable to determine genesis blocks {res.text}')
+
+            # init unspent blocks
+            genesis_blocks = res.json()
+            for gen in genesis_blocks:
+                box_id = gen['boxId']
+                unspent[box_id] = True # height 0
 
     # lets gooooo...
     logger.info(f'''
     Find Unspent Boxes...
-        current: {current_height}
-          start: {starting_height}
+        between: {last_height+1}..{current_height}
            node: {node_network}/{node_version}
     ''')
-    printProgressBar(starting_height, current_height, prefix = 'Progress:', length = 50)
-    for blk in range(starting_height, current_height):
+    printProgressBar(last_height, current_height, prefix = 'Progress:', length = 50)
+    # +1 to include both starting and current in range
+    # starting is last block processed, don't reprocess
+    unspent_counter = 0
+    for blk in range(last_height+1, current_height+1):
         if VERBOSE: logger.debug(f'{blk}: {len(unspent.keys())}')
         res = get(f'{NODE_URL}/blocks/at/{blk}', headers=headers, timeout=2)
         if not res.ok:
@@ -200,49 +230,55 @@ async def main(args):
                         unspent = await del_inputs(tx['inputs'], unspent)
                         if VERBOSE: logger.debug(f'  adding outputs')
                         unspent = await add_outputs(tx['outputs'], unspent, blk)
+                        unspent_counter += len(unspent)
         
-        # don't checkpoint at height 0
-        if blk > 0:
+        # update progress bar on screen
+        if blk%UPDATE_INTERVAL == 0:
+            suffix = f'''{blk}/{len(unspent.keys())}/{t.split()} ({len(blips)} blips)'''
+            printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
 
-            # update progress bar on screen
-            if blk%UPDATE_INTERVAL == 0:
-                suffix = f'''{blk}/{len(unspent.keys())}/{t.split()} ({len(blips)} blips)'''
-                printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
-
-            # save current unspent to sql
-            if (blk%CHECKPOINT_INTERVAL == 0) or (blk == current_height):
-                await checkpoint(blk, current_height, unspent, eng)
-                unspent = {}
+        # save current unspent to sql
+        if (blk%CHECKPOINT_INTERVAL == 0) or (blk == current_height):
+            await checkpoint(blk, current_height, unspent, eng)
+            unspent = {}
 
     # keep track of the stragglers
-    if unspent == {}:
-        logger.info('No new boxes...')
-    else:
-        await checkpoint(blk, current_height, unspent, eng)
+    if unspent_counter > 0:
+        logger.info(f'{unspent_counter} new boxes processed...')
 
-    total_value = 0
-    for val in unspent.values():
-        total_value += val
-    total_value /= NERGS2ERGS
-
+    eng.dispose()
     return {
         'current_height' : current_height,
-        'num_unspent_boxes': len(unspent.keys()),
-        'total_value'  : total_value,
+        'num_unspent_boxes': unspent_counter,
         'blips': blips
     }
 
 if __name__ == '__main__':
     t = Timer()
-    t.start()
 
-    res = asyncio.run(main(args))
-    logger.info(f'''
-        SUMMARY:
-        ========
-        current height : {res['current_height']}
-        # unspent boxes: {res['num_unspent_boxes']}
-            total value: {res['num_unspent_boxes']:,.2f}
-    ''')
+    # infinite loop
+    infinity_counter = 0
+    while True:
+        t.start()
 
-    t.stop()
+        # process unspent boxes
+        res = asyncio.run(main(args))
+        args.height = -1 # ignore this after first loop
+        last_block = res['current_height']        
+        logger.info(f'''{res['current_height']} height/{res['num_unspent_boxes']} new unspent''')
+        sec = t.stop()
+        logger.debug(f'Update Danaides in {sec:0.4f}s...')
+
+        # wait for next block
+        current_height = last_block
+        t.start()
+        while last_block == current_height:
+            inf = get_node_info()
+            current_height = inf['fullHeight']
+        
+            infinity_counter += 1
+            print(f'''\r({current_height}) {t.split()} Waiting for next block{'.'*(infinity_counter%4)}    ''', end = "\r")
+            time.sleep(1)
+        
+        sec = t.stop()
+        logger.debug(f'Block took {sec:0.4f}s...')

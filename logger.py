@@ -62,7 +62,7 @@ class Timer:
 
         elapsed_time = time.perf_counter() - self._start_time
         self._start_time = None
-        logger.debug(f"Elapsed time: {elapsed_time:0.4f}s")
+        return elapsed_time
 
     def split(self):
         """check current elapsed time"""
