@@ -23,7 +23,7 @@ VERBOSE = False
 
 DB_DANAIDES = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DBNM')}"
 NODE_APIKEY = getenv('ERGOPAD_APIKEY')
-NODE_URL = 'http://10.0.0.134:9053' # getenv('ERGONODE_HOST')
+NODE_URL = f'''http://{getenv('NODE_URL')}:{getenv('NODE_PORT')}'''
 NERGS2ERGS = 10**9
 # ready, go
 UPDATE_INTERVAL = 100 # update progress display every X blocks
