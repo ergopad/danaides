@@ -15,6 +15,7 @@ parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='sto
 parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
 args = parser.parse_args()
 
+PRETTYPRINT = args.prettyprint
 VERBOSE = False
 
 DB_DANAIDES = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DBNM')}"
@@ -90,58 +91,69 @@ async def main(args):
     for box in boxes:
         box_id = box['box_id']
         suffix = f'''stake keys: {stakekey_counter}/addresses: {len(addresses)}/blips: {blip_counter}/{box_id} {t.split()} {100*prg/box_count:0.2f}%'''
-        # printProgressBar(prg, box_count, prefix='Progress:', suffix=suffix, length=50)
-        logger.debug(suffix)
+        if PRETTYPRINT: printProgressBar(prg, box_count, prefix='Progress:', suffix=suffix, length=50)
+        else: logger.debug(suffix)
         prg += 1
 
-        res = get(f'''{NODE_URL}/utxo/byId/{box_id}''', headers=headers, timeout=2)
-        if res.status_code == 404:
-            if VERBOSE: logger.warning(f'BLIP: {box_id}')
-            blip_counter += 1
-            pass
-            # logger.error(f'Only unspent boxes allowed on this endpoint; consider updating boxes table: {box}')
+        retries = 0
+        while retries < 5:
+            try:
+                with get(f'''{NODE_URL}/utxo/byId/{box_id}''', headers=headers, timeout=2) as res:
+                    if res.status_code == 404:
+                        if VERBOSE: logger.warning(f'BLIP: {box_id}')
+                        blip_counter += 1
+                        pass
+                        # logger.error(f'Only unspent boxes allowed on this endpoint; consider updating boxes table: {box}')
 
-        # logger.warning(res.text); sleep(5)
-        if res.ok:
-            utxo = res.json()
-            address = utxo['ergoTree']
-            raw = address[6:]
-            assets = utxo['assets']
-            if address in STAKE_KEYS:
-                stake_token_id = STAKE_KEYS[address]
-                # found ergopad staking key
-                if utxo['assets'][0]['tokenId'] == stake_token_id:
-                    if VERBOSE: logger.debug(f'found ergopad staking token in box: {box}')
-                    stakekey_counter += 1
-                    found[box_id] = {
-                        'stakeKeyId': utxo['additionalRegisters']['R5'][4:], # TODO: validate that this starts with 0e20 ??
-                        'stakeAmount': utxo['assets'][1]['amount'],
-                        'stake_token_id': stake_token_id,
-                        # 'penaltyPct': utxo['additionalRegisters']['R4'][1], # TODO: how to render this- box["assets"][1]["amount"]/10**stakedTokenInfo["decimals"],
-                        # 'penaltyEndTime': utxo['additionalRegisters']['R4'][1], # TODO: how to render this- validPenalty(stakeBoxR4[1]),
-                    }
+                    # logger.warning(res.text); sleep(5)
+                    if res.ok:
+                        utxo = res.json()
+                        address = utxo['ergoTree']
+                        raw = address[6:]
+                        assets = utxo['assets']
+                        if address in STAKE_KEYS:
+                            stake_token_id = STAKE_KEYS[address]
+                            # found ergopad staking key
+                            if utxo['assets'][0]['tokenId'] == stake_token_id:
+                                if VERBOSE: logger.debug(f'found ergopad staking token in box: {box}')
+                                stakekey_counter += 1
+                                found[box_id] = {
+                                    'stakeKeyId': utxo['additionalRegisters']['R5'][4:], # TODO: validate that this starts with 0e20 ??
+                                    'stakeAmount': utxo['assets'][1]['amount'],
+                                    'stake_token_id': stake_token_id,
+                                    # 'penaltyPct': utxo['additionalRegisters']['R4'][1], # TODO: how to render this- box["assets"][1]["amount"]/10**stakedTokenInfo["decimals"],
+                                    # 'penaltyEndTime': utxo['additionalRegisters']['R4'][1], # TODO: how to render this- validPenalty(stakeBoxR4[1]),
+                                }
 
-            # store assets by address
-            if len(assets) > 0:
-                # init for address
-                if raw not in addresses:
-                    addresses[raw] = []
-                
-                # save assets
-                for asset in assets:
-                    addresses[raw].append({
-                        'token_id': asset['tokenId'], 
-                        'amount': asset['amount'],
-                        'box_id': box_id,
-                    })
+                        # store assets by address
+                        if len(assets) > 0:
+                            # init for address
+                            if raw not in addresses:
+                                addresses[raw] = []
+                            
+                            # save assets
+                            for asset in assets:
+                                addresses[raw].append({
+                                    'token_id': asset['tokenId'], 
+                                    'amount': asset['amount'],
+                                    'box_id': box_id,
+                                })
 
-                if VERBOSE: logger.debug(addresses[raw])
+                            if VERBOSE: logger.debug(addresses[raw])
 
-        else:
-            if VERBOSE: logger.error('bonk')    
+                    else:
+                        if VERBOSE: logger.error('bonk')    
+
+                    retries = 5
+            
+            except Exception as e:
+                logger.error(f'ERR: {e}')
+                retries += 1
+                sleep(1)
+                pass
     
-    # printProgressBar(box_count, box_count, prefix='Progress:', suffix=f'Complete in {t.split()}'+(' '*100), length=50)
-    logger.debug(suffix)
+    if PRETTYPRINT: printProgressBar(box_count, box_count, prefix='Progress:', suffix=f'Complete in {t.split()}'+(' '*100), length=50)
+    else: logger.debug(suffix)
 
     # addresses
     addrtokens = {'address': [], 'token_id': [], 'amount': [], 'box_id': []}
