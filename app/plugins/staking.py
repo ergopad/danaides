@@ -13,6 +13,7 @@ from pydantic import BaseModel
 parser = argparse.ArgumentParser()
 parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
 parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
+parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
 args = parser.parse_args()
 
 PRETTYPRINT = args.prettyprint

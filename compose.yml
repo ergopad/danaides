@@ -15,7 +15,7 @@ services:
       - ./app:/app
     networks:
       - ergopad-net
-    command: watchmedo auto-restart --recursive --pattern="*.py" --directory="/app" -- python -m main:app
+    command: watchmedo auto-restart --recursive --pattern="*.py" --directory="/app" -- python -m main
     # command: tail /dev/null -f
 
 networks:

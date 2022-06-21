@@ -143,7 +143,7 @@ async def checkpoint(blk, current_height, unspent, eng):
         con.execute(sql)
 
 ### MAIN
-async def process_boxes(args):
+async def process_boxes(args, t):
     # find unspent boxes at current height
     node_info = get_node_info()
     current_height = node_info['fullHeight']
@@ -174,8 +174,8 @@ async def process_boxes(args):
         # start from saved, if exists
         if ht is not None:
             if ht['height'] > 0:
-                logger.info(f'Existing boxes found...')
                 last_height = ht['height']
+                logger.info(f'Existing boxes found, starting at {last_height}...')
     
         # if all else fails, from scratch
         else:
@@ -192,7 +192,7 @@ async def process_boxes(args):
 
     # lets gooooo...
     unspent_counter = 0
-    if last_height > current_height:
+    if last_height <= current_height:
         if PRETTYPRINT: printProgressBar(last_height, current_height, prefix = 'Progress:', length = 50)
         else: logger.info(f'''Find Unspent Boxes between: {last_height+1}..{current_height} (node: {node_network}/{node_version})''')
 
@@ -252,7 +252,7 @@ class App:
     async def process_unspent(self, args):
         t = Timer()
         t.start()
-        res = await process_boxes(args)
+        res = await process_boxes(args, t)
         args.height = -1 # ignore this after first loop
         last_block = res['current_height']        
         if res['num_unspent_boxes'] == 0:
