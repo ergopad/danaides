@@ -1,32 +1,28 @@
 import asyncio
-import time
-
-from cmath import e
+import os, sys, time, signal
 import pandas as pd
 import argparse
  
-from sqlalchemy import create_engine, text
-from logger import logger, Timer, printProgressBar
+from utils.db import eng, text
+from utils.logger import logger, myself, Timer, printProgressBar
+from plugins import staking
 from requests import get
 from os import getenv
 from base58 import b58encode
-from pydantic import BaseModel
-
-from dotenv import load_dotenv
-load_dotenv()
+# from pydantic import BaseModel
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
 parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
+parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
 args = parser.parse_args()
 
+PRETTYPRINT = args.prettyprint
 VERBOSE = False
 
-DB_DANAIDES = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DBNM')}"
 NODE_APIKEY = getenv('ERGOPAD_APIKEY')
 NODE_URL = f'''http://{getenv('NODE_URL')}:{getenv('NODE_PORT')}'''
 NERGS2ERGS = 10**9
-# ready, go
 UPDATE_INTERVAL = 100 # update progress display every X blocks
 CHECKPOINT_INTERVAL = 1000 # save progress every X blocks
 
@@ -100,8 +96,9 @@ async def add_outputs(outputs: dict, unspent: dict, height: int = -1) -> dict:
 # upsert current chunk
 async def checkpoint(blk, current_height, unspent, eng):
     suffix = f'Checkpoint at {blk}...'
-    printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
-    # logger.info('checkpoint')
+    if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
+    else: logger.info(suffix)
+    if VERBOSE: logger.info(blk)
     df = pd.DataFrame.from_dict({
         'box_id': list(unspent.keys()), 
         'height': list(map(int, unspent.values())), 
@@ -146,7 +143,7 @@ async def checkpoint(blk, current_height, unspent, eng):
         con.execute(sql)
 
 ### MAIN
-async def main(args):
+async def process_boxes(args):
     # find unspent boxes at current height
     node_info = get_node_info()
     current_height = node_info['fullHeight']
@@ -154,8 +151,7 @@ async def main(args):
     node_network = node_info['network']
     unspent = {}
 
-    # init or pull boxes from sql into unspent
-    eng = create_engine(DB_DANAIDES)
+    # init or pull boxes from sql into unspent    
     if args.truncate:
         logger.warning('Truncate requested...')
         sql = text(f'''truncate table boxes''')
@@ -195,82 +191,122 @@ async def main(args):
                 unspent[box_id] = True # height 0
 
     # lets gooooo...
-    logger.info(f'''
-    Find Unspent Boxes...
-        between: {last_height+1}..{current_height}
-           node: {node_network}/{node_version}
-    ''')
-    printProgressBar(last_height, current_height, prefix = 'Progress:', length = 50)
-    # +1 to include both starting and current in range
-    # starting is last block processed, don't reprocess
     unspent_counter = 0
-    for blk in range(last_height+1, current_height+1):
-        if VERBOSE: logger.debug(f'{blk}: {len(unspent.keys())}')
-        res = get(f'{NODE_URL}/blocks/at/{blk}', headers=headers, timeout=2)
-        if not res.ok:
-            logger.warning(f'block header request failed {res.text}')
-        else:
-            block_headers = res.json()
-            for hdr in block_headers:
-                res = get(f'{NODE_URL}/blocks/{hdr}/transactions', headers=headers, timeout=2)
-                if not res.ok:
-                    logger.warning(f'block transaction request failed {res.text}')
-                else:
-                    block_transactions = res.json()['transactions']
-                    for tx in block_transactions:
-                        if VERBOSE: logger.debug(f'  removing inputs')
-                        unspent = await del_inputs(tx['inputs'], unspent)
-                        if VERBOSE: logger.debug(f'  adding outputs')
-                        unspent = await add_outputs(tx['outputs'], unspent, blk)
-                        unspent_counter += len(unspent)
-        
-        # update progress bar on screen
-        if blk%UPDATE_INTERVAL == 0:
-            suffix = f'''{blk}/{len(unspent.keys())}/{t.split()} ({len(blips)} blips)'''
-            printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
+    if last_height > current_height:
+        if PRETTYPRINT: printProgressBar(last_height, current_height, prefix = 'Progress:', length = 50)
+        else: logger.info(f'''Find Unspent Boxes between: {last_height+1}..{current_height} (node: {node_network}/{node_version})''')
 
-        # save current unspent to sql
-        if (blk%CHECKPOINT_INTERVAL == 0) or (blk == current_height):
-            await checkpoint(blk, current_height, unspent, eng)
-            unspent = {}
+        # +1 to include both starting and current in range
+        # starting is last block processed, don't reprocess
+        for blk in range(last_height+1, current_height+1):
+            if VERBOSE: logger.debug(f'{blk}: {len(unspent.keys())}')
+            res = get(f'{NODE_URL}/blocks/at/{blk}', headers=headers, timeout=2)
+            if not res.ok:
+                logger.warning(f'block header request failed for block {blk}; {res.text}')
+            else:
+                block_headers = res.json()
+                for hdr in block_headers:
+                    res = get(f'{NODE_URL}/blocks/{hdr}/transactions', headers=headers, timeout=2)
+                    if not res.ok:
+                        logger.warning(f'block transaction request failed for header {hdr}; {res.text}')
+                    else:
+                        block_transactions = res.json()['transactions']
+                        for tx in block_transactions:
+                            if VERBOSE: logger.debug(f'  removing inputs')
+                            unspent = await del_inputs(tx['inputs'], unspent)
+                            if VERBOSE: logger.debug(f'  adding outputs')
+                            unspent = await add_outputs(tx['outputs'], unspent, blk)
+                            unspent_counter += len(unspent)
+            
+            # update progress bar on screen
+            if blk%UPDATE_INTERVAL == 0:
+                suffix = f'''{blk}/{len(unspent.keys())}/{t.split()} ({len(blips)} blips)'''
+                if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
+                else: logger.info(suffix)                
 
-    # keep track of the stragglers
-    if unspent_counter > 0:
-        logger.info(f'{unspent_counter} new boxes processed...')
+            # save current unspent to sql
+            if (blk%CHECKPOINT_INTERVAL == 0) or (blk == current_height):
+                await checkpoint(blk, current_height, unspent, eng)
+                unspent = {}
 
-    eng.dispose()
     return {
         'current_height' : current_height,
         'num_unspent_boxes': unspent_counter,
         'blips': blips
     }
 
-if __name__ == '__main__':
-    t = Timer()
+class App:
+    def __init__(self):
+        self.shutdown = False
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
 
-    # infinite loop
-    infinity_counter = 0
-    while True:
+    def exit_gracefully(self, signum, frame):
+        print('Received:', signum)
+        self.shutdown = True
+
+    def start(self):
+        logger.info("Begin...")
+
+    # find all new currnet blocks
+    async def process_unspent(self, args):
+        t = Timer()
         t.start()
-
-        # process unspent boxes
-        res = asyncio.run(main(args))
+        res = await process_boxes(args)
         args.height = -1 # ignore this after first loop
         last_block = res['current_height']        
-        logger.info(f'''{res['current_height']} height/{res['num_unspent_boxes']} new unspent''')
+        if res['num_unspent_boxes'] == 0:
+            logger.info(f'''Nothing to process at {last_block}.''')
+        else: 
+            logger.info(f'''Processing complete for height {last_block}; {res['num_unspent_boxes']} new unspent''')
         sec = t.stop()
-        logger.debug(f'Update Danaides in {sec:0.4f}s...')
+        logger.debug(f'Danaides update took {sec:0.4f}s...')
+        
+        return last_block
 
-        # wait for next block
+    # wait for new height
+    async def hibernate(self, last_block):
         current_height = last_block
+        infinity_counter = 0
+        t = Timer()
         t.start()
+
+        logger.info('Waiting for next block...')
         while last_block == current_height:
             inf = get_node_info()
             current_height = inf['fullHeight']
-        
-            infinity_counter += 1
-            print(f'''\r({current_height}) {t.split()} Waiting for next block{'.'*(infinity_counter%4)}    ''', end = "\r")
+
+            if PRETTYPRINT: 
+                print(f'''\r({current_height}) {t.split()} Waiting for next block{'.'*(infinity_counter%4)}    ''', end = "\r")
+                infinity_counter += 1
+
             time.sleep(1)
-        
+
         sec = t.stop()
-        logger.debug(f'Block took {sec:0.4f}s...')
+        logger.debug(f'Block took {sec:0.4f}s...')        
+
+    def stop(self):
+        logger.info("Fin.")
+
+### MAIN
+if __name__ == '__main__':
+    app = App()
+    app.start()
+    
+    # main loop
+    while not app.shutdown:
+        try:
+            last_block = asyncio.run(app.process_unspent(args))
+            asyncio.run(app.hibernate(last_block))
+        except KeyboardInterrupt:
+            logger.debug('Interrupted.')
+            app.stop()
+            try: sys.exit(0)
+            except SystemExit: os._exit(0)            
+        except Exception as e:
+            logger.error(f'ERR: {myself}, {e}')
+
+    # fin
+    app.stop()
+    try: sys.exit(0)
+    except SystemExit: os._exit(0)            

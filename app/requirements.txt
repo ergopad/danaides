@@ -1,0 +1,10 @@
+requests
+colorlog
+base58
+pydantic
+
+pandas
+
+sqlalchemy
+psycopg2-binary
+

@@ -27,15 +27,15 @@ formatter = ColoredFormatter(
 )
 handler = StreamHandler()
 handler.setFormatter(formatter)
-logger = logging.getLogger('ergopad')
+logger = getLogger('ergopad')
 logger.setLevel('LEIF')
 logger.addHandler(handler)
 
 # prevent logging from other handlers
-logging.getLogger('uvicorn.error').propagate = False
-logging.getLogger('sqlalchemy.engine.Engine').propagate = False
-logging.getLogger('sqlalchemy.pool.impl.QueuePool').propagate = False
-logging.getLogger('ergopad').propagate = False
+getLogger('uvicorn.error').propagate = False
+getLogger('sqlalchemy.engine.Engine').propagate = False
+getLogger('sqlalchemy.pool.impl.QueuePool').propagate = False
+getLogger('ergopad').propagate = False
 
 import inspect
 myself = lambda: inspect.stack()[1][3]

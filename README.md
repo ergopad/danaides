@@ -67,7 +67,7 @@ create table boxes (
     is_unspent boolean default true,
     primary key (id, is_unspent),
     unique (box_id, is_unspent)
-)
+);
 partition by list(is_unspent);
 
 create table boxes_spent partition of boxes for values in (false);
@@ -79,23 +79,25 @@ create table config (
     parameter varchar(100) not null,
     value varchar(100) not null,
     description varchar(1000) null    
-)
+);
 
+-- drop  table addresses_staking 
 create table addresses_staking (
     id serial primary key,
-    address
-    token_id (fk to tokens)
+    address text,
+    token_id varchar(64) not null,
     box_id varchar(64) not null,
-    amount
-)
+    amount bigint
+);
 
 create table keys_staking (
     id serial primary key,
-    box_id varchar(64)
-    token_id (fk to tokens)
-    amount decimal
-)
+    box_id varchar(64),
+    token_id varchar(64),
+    amount bigint
+);
 
+-- drop table tokens
 create table tokens (
     id serial primary key,
     token_name varchar(500),
@@ -105,7 +107,7 @@ create table tokens (
     decimals int, -- 2
     stake_token_id varchar(64), -- ergopad Stake Token
     stake_ergotree varchar(2000)
-)
+);
 
 insert into tokens (id, token_name, token_id, stake_token_id, stake_ergotree, decimals, token_type, emission_amount)
 values (
@@ -117,7 +119,7 @@ values (
     2,
     'EIP-004',
     40000000000
-)
+);
 
 insert into tokens (id, token_name, token_id, stake_token_id, stake_ergotree, decimals, token_type, emission_amount)
 values (
@@ -129,4 +131,4 @@ values (
     4,
     'EIP-004',
     2000000000000
-)
+);

@@ -1,18 +1,14 @@
 import asyncio
-from cmath import e
 import pandas as pd
 import argparse
 
 from time import sleep 
 from sqlalchemy import create_engine, text
-from logger import logger, Timer, printProgressBar
+from utils.logger import logger, Timer, printProgressBar
 from requests import get
 from os import getenv
 from base58 import b58encode
 from pydantic import BaseModel
-
-from dotenv import load_dotenv
-load_dotenv()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
@@ -93,8 +89,9 @@ async def main(args):
     stakekey_counter = 0
     for box in boxes:
         box_id = box['box_id']
-        suffix = f'''stake keys: {stakekey_counter}/addresses: {len(addresses)}/blips: {blip_counter}/{box_id} {t.split()}'''
-        printProgressBar(prg, box_count, prefix='Progress:', suffix=suffix, length=50)
+        suffix = f'''stake keys: {stakekey_counter}/addresses: {len(addresses)}/blips: {blip_counter}/{box_id} {t.split()} {100*prg/box_count:0.2f}%'''
+        # printProgressBar(prg, box_count, prefix='Progress:', suffix=suffix, length=50)
+        logger.debug(suffix)
         prg += 1
 
         res = get(f'''{NODE_URL}/utxo/byId/{box_id}''', headers=headers, timeout=2)
@@ -143,7 +140,8 @@ async def main(args):
         else:
             if VERBOSE: logger.error('bonk')    
     
-    printProgressBar(box_count, box_count, prefix='Progress:', suffix=f'Complete in {t.split()}'+(' '*100), length=50)
+    # printProgressBar(box_count, box_count, prefix='Progress:', suffix=f'Complete in {t.split()}'+(' '*100), length=50)
+    logger.debug(suffix)
 
     # addresses
     addrtokens = {'address': [], 'token_id': [], 'amount': [], 'box_id': []}
@@ -160,7 +158,7 @@ async def main(args):
             addrtokens['amount'].append(token['amount'])
             addrtokens['box_id'].append(token['box_id'])
     df_addresses = pd.DataFrame().from_dict(addrtokens)
-    df_addresses.to_sql('checkpoint_addresses', eng, if_exists='replace')
+    df_addresses.to_sql('checkpoint_addresses_staking', eng, if_exists='replace')
 
     # stake keys
     df_keys_staking = pd.DataFrame().from_dict({
@@ -186,7 +184,7 @@ async def main(args):
         sql = f'''
             insert into addresses_staking (address, token_id, amount, box_id)
                 select address, token_id, amount, box_id
-                from checkpoint_addresses
+                from checkpoint_addresses_staking
                 except
                 select address, token_id, amount, box_id
                 from addresses_staking
@@ -207,7 +205,7 @@ async def main(args):
         sql = f'''
             insert into keys_staking (box_id, stakekey_id, stake_amount, stake_token_id)
                 select box_id, stakekey_id, stake_amount, stake_token_id
-                from keys_staking
+                from checkpoint_keys_staking
                 except
                 select box_id, stakekey_id, stake_amount, stake_token_id
                 from keys_staking
