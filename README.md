@@ -90,11 +90,14 @@ create table addresses_staking (
     amount bigint
 );
 
+-- drop table keys_staking 
 create table keys_staking (
     id serial primary key,
+    stakekey_token_id varchar(64),
     box_id varchar(64),
     token_id varchar(64),
-    amount bigint
+    amount bigint,
+    penalty bigint
 );
 
 -- drop table tokens

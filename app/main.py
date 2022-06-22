@@ -123,15 +123,11 @@ async def checkpoint(blk, current_height, unspent, eng):
         # add unspent
         sql = f'''
             insert into boxes (box_id, height, is_unspent)
-                -- newbies
-                select box_id, height, is_unspent
-                from checkpoint_boxes
-                where is_unspent = true
-                
-                -- avoid dups
-                except select box_id, height, is_unspent
-                from boxes
-                where is_unspent = true
+                select c.box_id, c.height, c.is_unspent
+                from checkpoint_boxes c
+                    left join boxes b on b.box_id = c.box_id
+                where c.is_unspent = true
+                    and b.box_id is null
                 ;
         '''
         con.execute(sql)
