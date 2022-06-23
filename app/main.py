@@ -164,7 +164,13 @@ async def process_boxes(args, t):
         eng.execute(sql)
 
     else:
-        sql = text(f'''select height from audit_log order by created_at desc limit 1''')
+        sql = text(f'''
+            select height 
+            from audit_log 
+            where service = 'main'
+            order by created_at desc 
+            limit 1
+        ''')
         ht = eng.execute(sql).fetchone()
         
         # start from saved, if exists

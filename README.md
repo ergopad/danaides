@@ -56,6 +56,8 @@
 create table audit_log (
     id serial not null primary key,
     height int not null,
+    service varchar(64) not null default 'main',
+    notes text null,
     created_at timestamp default now()
 )
 

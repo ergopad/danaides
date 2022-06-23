@@ -35,6 +35,82 @@ blips = []
 def b58(n): 
     return b58encode(bytes.fromhex(n)).decode('utf-8')
 
+async def checkpoint(blk, box_count, addresses, keys_found, eng):
+    suffix = f'Checkpoint at {blk}...'
+    if PRETTYPRINT: printProgressBar(blk, box_count, prefix='Progress:', suffix=suffix, length=50)
+    else: logger.info(suffix)
+
+    # addresses
+    addrtokens = {'address': [], 'token_id': [], 'amount': [], 'box_id': []}
+    addr_counter = {}
+    addr_converter = {}
+    for raw, tokens in addresses.items():
+        r2a = get(f'''{NODE_URL}/utils/rawToAddress/{raw}''', headers=headers, timeout=2)
+        pubkey = ''
+        if r2a.ok:
+            pubkey = r2a.json()['address']
+            addr_converter[raw] = pubkey
+
+        for token in tokens:            
+            addrtokens['address'].append(pubkey)
+            addrtokens['token_id'].append(token['token_id'])
+            addrtokens['amount'].append(token['amount'])
+            addrtokens['box_id'].append(token['box_id'])
+            addr_counter[pubkey] = 1
+    df_addresses = pd.DataFrame().from_dict(addrtokens)
+    df_addresses.to_sql('checkpoint_addresses_staking', eng, if_exists='replace')
+
+    # stake keys
+    df_keys_staking = pd.DataFrame().from_dict({
+        'box_id': list(keys_found.keys()), 
+        'token_id': [x['token_id'] for x in keys_found.values()],
+        'amount': [x['amount'] for x in keys_found.values()],
+        'penalty': [x['penalty'] for x in keys_found.values()],
+        'address': [addr_converter[x['address']] for x in keys_found.values()],
+        'stakekey_token_id': [x['stakekey_token_id'] for x in keys_found.values()],
+    })
+    df_keys_staking.to_sql('checkpoint_keys_staking', eng, if_exists='replace')
+
+    with eng.begin() as con:
+        # addresses
+        sql = f'''
+            delete from addresses_staking where box_id in (
+                select box_id::text
+                from checkpoint_addresses_staking
+            )
+        '''
+        con.execute(sql)
+
+        sql = f'''
+            insert into addresses_staking (address, token_id, amount, box_id)
+                select address, token_id, amount, box_id
+                from checkpoint_addresses_staking
+        '''
+        con.execute(sql)
+
+        # staking (keys)
+        sql = f'''
+            delete from keys_staking where box_id in (
+                select box_id::text
+                from checkpoint_keys_staking
+            )
+        '''
+        con.execute(sql)
+
+        sql = f'''
+            insert into keys_staking (box_id, token_id, amount, stakekey_token_id, penalty, address)
+                select box_id, token_id, amount, stakekey_token_id, penalty, address
+                from checkpoint_keys_staking
+        '''
+        con.execute(sql)
+
+        notes = f'''{len(addr_counter)} addresses, {len(keys_found)} keys'''
+        sql = f'''
+            insert into audit_log (height, service, notes)
+            values ({int(blk)}, 'staking', '{notes}')
+        '''
+        con.execute(sql)
+
 async def main(args):
     eng = create_engine(DB_DANAIDES)
     sql = '''
@@ -46,37 +122,77 @@ async def main(args):
     STAKE_KEYS = {}
     res = eng.execute(sql).fetchall()
     for key in res:
-        STAKE_KEYS['stake_ergotree'] = {
+        STAKE_KEYS[key['stake_ergotree']] = {
             'stake_token_id': key['stake_token_id'],
             'token_name': key['token_name'],
             'token_type': key['token_type'],
             'emission_amount': key['emission_amount'],
             'decimals': key['decimals'],
         }
-    found = {}
+    keys_found = {}
     addresses = {}
+    # logger.debug(STAKE_KEYS); exit(1)
 
+    # where to start? find boxes with height > ...
+    #   1. if height from cli, use it
+    #   2. else check audit_log/staking for last height
+    #   3. otherwise do all boxes
+    last_height = -1
+    if args.height > 0:
+        logger.info(f'Rollback requested to block: {args.height}...')
+        last_height = args.height-1
+
+    else:
+        sql = f'''
+            select height 
+            from audit_log 
+            where service = 'staking'
+            order by created_at desc 
+            limit 1
+        '''
+        last_height = eng.execute(sql).fetchone()['height'] or -1        
+    
     # find newly unspent boxes
     sql = f'''
-        select b.box_id, b.height
+        select distinct b.box_id, b.height
         from boxes b
             left join addresses_staking a on a.box_id = b.box_id
+            left join keys_staking k on k.box_id = b.box_id
         where is_unspent = true
-            and a.box_id is null
+            and (a.box_id is null or k.box_id is null)
     '''
-    
-    # is this useful?
-    if args.height > 0:
-        sql = f'''
-            select box_id, height
-            from boxes
-            where is_unspent = true
-                and height >= {args.height}
-        '''
-    
-    logger.info('Fetching all unspent boxes...')
+    msg = ''
+    if last_height > 0:
+        sql += f'and b.height > {last_height}'
+        msg = f', beginning at height {last_height}' # ?? TODO: how to make height work with only box ids
+
+    logger.info(f'Fetching all unspent boxes{msg}...')
     boxes = eng.execute(sql).fetchall()
     box_count = len(boxes)
+
+    # remove spent boxes from staking tables
+    logger.info('Remove spent boxes...')
+    with eng.begin() as con:
+        # addresses
+        sql = f'''
+            -- remove spent boxes from addresses
+            delete from addresses_staking
+            using addresses_staking a
+                left join boxes b on b.box_id = a.box_id
+            where b.is_unspent = true
+                and b.box_id is null
+        '''
+        con.execute(sql)
+
+        sql = f'''
+            -- remove spent boxes from keys_staking
+            delete from keys_staking
+            using keys_staking a
+                left join boxes b on b.box_id = a.box_id
+            where b.is_unspent = true
+                and b.box_id is null
+        '''
+        con.execute(sql)
 
     '''
     for all unspent boxes
@@ -86,15 +202,16 @@ async def main(args):
     4. last updated
     '''
     logger.info(f'Find all staking keys from {box_count} boxes...')
-    prg = 0
+    blk = 0
     blip_counter = 0
-    stakekey_counter = 0
+    stakekey_counter = 0    
     for box in boxes:
         box_id = box['box_id']
-        suffix = f'''stake keys: {stakekey_counter}/addresses: {len(addresses)}/blips: {blip_counter}/{box_id} {t.split()} {100*prg/box_count:0.2f}%'''
-        if PRETTYPRINT: printProgressBar(prg, box_count, prefix='Progress:', suffix=suffix, length=50)
+        # box_id = 'c9c622ddce1e9d3a8ee07c16575a5aeefd33fa5557b93f26ff22cf879eeb7f21'
+        suffix = f'''stake keys: {stakekey_counter}/addresses: {len(addresses)}/blips: {blip_counter}/{box_id} {t.split()}'''
+        if PRETTYPRINT: printProgressBar(blk, box_count, prefix='Progress:', suffix=suffix, length=50)
         else: logger.debug(suffix)
-        prg += 1
+        blk += 1
 
         retries = 0
         while retries < 5:
@@ -110,21 +227,22 @@ async def main(args):
                     if res.ok:
                         utxo = res.json()
                         address = utxo['ergoTree']
-                        raw = address[6:]
                         assets = utxo['assets']
-                        if address in STAKE_KEYS:
+                        raw = address[6:]
+                        if address in STAKE_KEYS:   
                             decimals = STAKE_KEYS[address]['decimals']
                             stake_token_id = STAKE_KEYS[address]['stake_token_id']
                             # found ergopad staking key
-                            if utxo['assets'][0]['tokenId'] == stake_token_id:
+                            if assets[0]['tokenId'] == stake_token_id:
                                 if VERBOSE: logger.debug(f'found ergopad staking token in box: {box}')
                                 stakekey_counter += 1
                                 R4_1 = ErgoValue.fromHex(utxo['additionalRegisters']['R4']).getValue().apply(1)
-                                found[box_id] = {
+                                keys_found[box_id] = {
                                     'stakekey_token_id': utxo['additionalRegisters']['R5'][4:], # TODO: validate that this starts with 0e20 ??
-                                    'amount': utxo['assets'][1]['amount'],
+                                    'amount': assets[1]['amount'],
                                     'token_id': stake_token_id,
-                                    'penalty': R4_1,
+                                    'penalty': int(R4_1),
+                                    'address': raw
                                 }
 
                         # store assets by address
@@ -153,79 +271,21 @@ async def main(args):
                 retries += 1
                 sleep(1)
                 pass
+
+        # update progress bar on screen
+        if blk%UPDATE_INTERVAL == 0:
+            suffix = f'''{blk}/addr:{len(addresses.keys())}/keys:{len(keys_found.keys())}/{t.split()} ({len(blips)} blips)'''
+            if PRETTYPRINT: printProgressBar(blk, box_count, prefix='Progress:', suffix=suffix, length=50)
+            else: logger.info(suffix)                
+
+        # save current unspent to sql
+        if (blk%CHECKPOINT_INTERVAL == 0) or (blk == box_count):
+            await checkpoint(blk, box_count, addresses, keys_found, eng)
+            addresses = {}
+            keys_found = {}
     
     if PRETTYPRINT: printProgressBar(box_count, box_count, prefix='Progress:', suffix=f'Complete in {t.split()}'+(' '*100), length=50)
     else: logger.debug(suffix)
-
-    # addresses
-    addrtokens = {'address': [], 'token_id': [], 'amount': [], 'box_id': []}
-    for raw, tokens in addresses.items():
-        r2a = get(f'''{NODE_URL}/utils/rawToAddress/{raw}''', headers=headers, timeout=2)
-        pubkey = ''
-        if r2a.ok:
-            pubkey = r2a.json()['address']
-            # if pubkey == '9hix5hs1rCbdbd2tbfEqugrGTeq9oo18XDjHjrZn74WRcNNY6k3': logger.warning(tokens)
-
-        for token in tokens:            
-            addrtokens['address'].append(pubkey)
-            addrtokens['token_id'].append(token['token_id'])
-            addrtokens['amount'].append(token['amount'])
-            addrtokens['box_id'].append(token['box_id'])
-    df_addresses = pd.DataFrame().from_dict(addrtokens)
-    df_addresses.to_sql('checkpoint_addresses_staking', eng, if_exists='replace')
-
-    # stake keys
-    df_keys_staking = pd.DataFrame().from_dict({
-        'box_id': list(found.keys()), 
-        'token_id': [x['token_id'] for x in found.values()],
-        'amount': [x['amount'] for x in found.values()],
-        'penalty': [x['penalty'] for x in found.values()],
-        'stakekey_token_id': [x['stakekey_token_id'] for x in found.values()],
-    })
-    df_keys_staking.to_sql('checkpoint_keys_staking', eng, if_exists='replace')
-
-    with eng.begin() as con:
-        # addresses
-        sql = f'''
-            -- remove spent boxes from addresses
-            delete from addresses_staking
-            using addresses_staking a
-                left join boxes b on b.box_id = a.box_id
-            where b.is_unspent = true
-                and b.box_id is null
-        '''
-        con.execute(sql)
-
-        sql = f'''
-            insert into addresses_staking (address, token_id, amount, box_id)
-                select address, token_id, amount, box_id
-                from checkpoint_addresses_staking
-                except
-                select address, token_id, amount, box_id
-                from addresses_staking
-        '''
-        con.execute(sql)
-
-        # staking
-        sql = f'''
-            -- remove spent boxes from keys_staking
-            delete from keys_staking
-            using keys_staking a
-                left join boxes b on b.box_id = a.box_id
-            where b.is_unspent = true
-                and b.box_id is null
-        '''
-        con.execute(sql)
-
-        sql = f'''
-            insert into keys_staking (box_id, stakekey_id, stake_amount, stake_token_id)
-                select box_id, stakekey_id, stake_amount, stake_token_id
-                from checkpoint_keys_staking
-                except
-                select box_id, stakekey_id, stake_amount, stake_token_id
-                from keys_staking
-        '''
-        con.execute(sql)
 
     eng.dispose()
     return {
