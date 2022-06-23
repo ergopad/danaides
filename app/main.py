@@ -101,7 +101,7 @@ async def checkpoint(blk, current_height, unspent, eng):
     if VERBOSE: logger.info(blk)
     df = pd.DataFrame.from_dict({
         'box_id': list(unspent.keys()), 
-        'height': list(map(int, unspent.values())), 
+        'height': list(map(int, unspent.values())), # 'nergs': list(map(int, [v[0] for v in unspent.values()])), 
         'is_unspent': [b!=-1 for b in list(unspent.values())]
     })
     # logger.info(df)

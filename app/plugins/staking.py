@@ -150,7 +150,9 @@ async def main(args):
             order by created_at desc 
             limit 1
         '''
-        last_height = eng.execute(sql).fetchone()['height'] or -1        
+        res = eng.execute(sql).fetchone()
+        if res is not None:
+            last_height = res['height']        
     
     # find newly unspent boxes
     sql = f'''
@@ -228,9 +230,9 @@ async def main(args):
                         utxo = res.json()
                         address = utxo['ergoTree']
                         assets = utxo['assets']
+                        nergs = utxo['value']
                         raw = address[6:]
                         if address in STAKE_KEYS:   
-                            decimals = STAKE_KEYS[address]['decimals']
                             stake_token_id = STAKE_KEYS[address]['stake_token_id']
                             # found ergopad staking key
                             if assets[0]['tokenId'] == stake_token_id:
