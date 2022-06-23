@@ -49,7 +49,7 @@ def get_node_info():
     return node_info
 
 async def checkpoint(blk, box_count, addresses, keys_found, eng):
-    suffix = f'Checkpoint at {blk}...'
+    suffix = f'Checkpoint at {blk}...'+(' '*80)
     if PRETTYPRINT: printProgressBar(blk, box_count, prefix='Progress:', suffix=suffix, length=50)
     else: logger.info(suffix)
 
@@ -124,7 +124,7 @@ async def checkpoint(blk, box_count, addresses, keys_found, eng):
         '''
         con.execute(sql)
 
-async def process(args, t):
+async def process(last_height, t):
     eng = create_engine(DB_DANAIDES)
     sql = '''
         select stake_ergotree, stake_token_id, token_name, token_id, token_type, emission_amount, decimals 
@@ -150,10 +150,8 @@ async def process(args, t):
     #   1. if height from cli, use it
     #   2. else check audit_log/staking for last height
     #   3. otherwise do all boxes
-    last_height = -1
-    if args.height > 0:
-        logger.info(f'Rollback requested to block: {args.height}...')
-        last_height = args.height-1
+    if last_height > 0:
+        logger.info(f'Rollback requested to block: {last_height}...')
 
     else:
         sql = f'''
@@ -178,7 +176,7 @@ async def process(args, t):
     '''
     msg = ''
     if last_height > 0:
-        sql += f'and b.height > {last_height}'
+        sql += f'and b.height > {last_height-3}' # be safe until this is chained behind box imports
         msg = f', beginning at height {last_height}' # ?? TODO: how to make height work with only box ids
 
     logger.info(f'Fetching all unspent boxes{msg}...')
@@ -248,7 +246,7 @@ async def process(args, t):
                         if address in STAKE_KEYS:   
                             stake_token_id = STAKE_KEYS[address]['stake_token_id']
                             # found ergopad staking key
-                            if assets[0]['tokenId'] == stake_token_id:
+                            if stake_token_id in [tk['tokenId'] for tk in assets]:
                                 if VERBOSE: logger.debug(f'found ergopad staking token in box: {box}')
                                 stakekey_counter += 1
                                 R4_1 = ErgoValue.fromHex(utxo['additionalRegisters']['R4']).getValue().apply(1)
@@ -299,23 +297,23 @@ async def process(args, t):
             addresses = {}
             keys_found = {}
     
-    if PRETTYPRINT: printProgressBar(box_count, box_count, prefix='Progress:', suffix=f'Complete in {t.split()}'+(' '*100), length=50)
-    else: logger.debug(suffix)
+    logger.debug('Complete.')
 
     eng.dispose()
     return {
         'box_count': box_count,
-        'last_block': last_block,
     }
 
-async def hibernate(last_block):
-    current_height = last_block
-    infinity_counter = 0
+async def hibernate():
+    inf = get_node_info()
+    last_height = inf['fullHeight']
+    current_height = last_height
     t = Timer()
     t.start()
 
     logger.info('Waiting for next block...')
-    while last_block == current_height:
+    infinity_counter = 0
+    while last_height == current_height:
         inf = get_node_info()
         current_height = inf['fullHeight']
 
@@ -326,18 +324,20 @@ async def hibernate(last_block):
         sleep(1)
 
     sec = t.stop()
-    logger.debug(f'Block took {sec:0.4f}s...')        
+    logger.debug(f'Block took {sec:0.4f}s...')     
+    return last_height
+
 #endregion FUNCTIONS
 
 async def main(args):
+    last_height = args.height
     while True:
         t = Timer()
         t.start()
 
-        res = process(args, t)
-        hibernate(res['last_block'])
+        res = await process(last_height, t)
+        last_height = await hibernate()
 
-        t.stop()
         sec = t.stop()
         logger.debug(f'Block took {sec:0.4f}s...')
 
