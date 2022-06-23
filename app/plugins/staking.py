@@ -35,6 +35,19 @@ blips = []
 def b58(n): 
     return b58encode(bytes.fromhex(n)).decode('utf-8')
 
+def get_node_info():
+    res = get(f'{NODE_URL}/info', headers=headers, timeout=2)
+    node_info = None
+    if not res.ok:
+        logger.error(f'unable to retrieve node info: {res.text}')
+        exit()
+    else:
+        node_info = res.json()
+        if VERBOSE: logger.debug(node_info)
+    
+    # return 10000 # testing
+    return node_info
+
 async def checkpoint(blk, box_count, addresses, keys_found, eng):
     suffix = f'Checkpoint at {blk}...'
     if PRETTYPRINT: printProgressBar(blk, box_count, prefix='Progress:', suffix=suffix, length=50)
@@ -111,7 +124,7 @@ async def checkpoint(blk, box_count, addresses, keys_found, eng):
         '''
         con.execute(sql)
 
-async def main(args):
+async def process(args, t):
     eng = create_engine(DB_DANAIDES)
     sql = '''
         select stake_ergotree, stake_token_id, token_name, token_id, token_type, emission_amount, decimals 
@@ -292,15 +305,41 @@ async def main(args):
     eng.dispose()
     return {
         'box_count': box_count,
+        'last_block': last_block,
     }
-#endregion FUNCTIONS
 
-if __name__ == '__main__':
+async def hibernate(last_block):
+    current_height = last_block
+    infinity_counter = 0
     t = Timer()
     t.start()
 
-    res = asyncio.run(main(args))
-    args.height = -1
-    logger.info(f'''# boxes: {res['box_count']}''')
+    logger.info('Waiting for next block...')
+    while last_block == current_height:
+        inf = get_node_info()
+        current_height = inf['fullHeight']
 
-    t.stop()
+        if PRETTYPRINT: 
+            print(f'''\r({current_height}) {t.split()} Waiting for next block{'.'*(infinity_counter%4)}    ''', end = "\r")
+            infinity_counter += 1
+
+        sleep(1)
+
+    sec = t.stop()
+    logger.debug(f'Block took {sec:0.4f}s...')        
+#endregion FUNCTIONS
+
+async def main(args):
+    while True:
+        t = Timer()
+        t.start()
+
+        res = process(args, t)
+        hibernate(res['last_block'])
+
+        t.stop()
+        sec = t.stop()
+        logger.debug(f'Block took {sec:0.4f}s...')
+
+if __name__ == '__main__':
+    res = asyncio.run(main(args))

@@ -66,6 +66,7 @@ create table boxes (
     id serial not null,
     box_id varchar(64) not null,
     height int not null,
+    nerg bigint,
     is_unspent boolean default true,
     primary key (id, is_unspent),
     unique (box_id, is_unspent)

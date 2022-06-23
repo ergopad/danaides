@@ -57,7 +57,6 @@ def b58(n):
 def get_node_info():
     res = get(f'{NODE_URL}/info', headers=headers, timeout=2)
     node_info = None
-    current_height = 0
     if not res.ok:
         logger.error(f'unable to retrieve node info: {res.text}')
         exit()
@@ -133,8 +132,8 @@ async def checkpoint(blk, current_height, unspent, eng):
         con.execute(sql)
 
         sql = f'''
-            insert into audit_log (height)
-            values ({int(blk)})
+            insert into audit_log (height, service)
+            values ({int(blk)}, 'main')
         '''
         con.execute(sql)
 
@@ -152,7 +151,7 @@ async def process_boxes(args, t):
         logger.warning('Truncate requested...')
         sql = text(f'''truncate table boxes''')
         eng.execute(sql)
-        sql = text(f'''insert into audit_log (height) values (0)''')
+        sql = text(f'''insert into audit_log (height, service) values (0, 'main')''')
         eng.execute(sql)
     
     last_height = -1
