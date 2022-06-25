@@ -2,7 +2,8 @@ import asyncio
 import os, sys, time, signal
 import pandas as pd
 import argparse
- 
+
+from plugins import staking
 from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar
 from plugins import staking
@@ -12,9 +13,11 @@ from base58 import b58encode
 # from pydantic import BaseModel
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
+parser.add_argument("-J", "--juxtapose", help="Alternative table name", type=str, default='boxes')
 parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
-parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
+parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
+parser.add_argument("-P", "--prettyprint", help="Progress bar vs. scrolling", action='store_true')
+parser.add_argument("-O", "--oneanddone", help="When complete, finish", action='store_true')
 args = parser.parse_args()
 
 PRETTYPRINT = args.prettyprint
@@ -73,7 +76,11 @@ async def del_inputs(inputs: dict, unspent: dict, height: int = -1) -> dict:
     for i in inputs:
         box_id = i['boxId']
         try:
-            new[box_id] = height
+            # new[box_id] = height
+            new[box_id] = {
+                'height': height,
+                'nergs': 0
+            }
         except Exception as e:
             blips.append({'box_id': box_id, 'height': height, 'msg': f'cant remove'})
             if VERBOSE: logger.warning(f'cant find {box_id} at height {height} while removing from unspent {e}')
@@ -84,48 +91,64 @@ async def add_outputs(outputs: dict, unspent: dict, height: int = -1) -> dict:
     new = unspent
     for o in outputs:
         box_id = o['boxId']
+        nergs = o['value']
         # amount = o['value']
         try:
-            new[box_id] = height
+            # new[box_id] = height
+            new[box_id] = {
+                'height': height,
+                'nergs': nergs
+            }
         except Exception as e:
             blips.append({'box_id': box_id, 'height': height, 'msg': f'cant add'})
             if VERBOSE: logger.warning(f'{box_id} exists at height {height} while adding to unspent {e}')
     return new
 
 # upsert current chunk
-async def checkpoint(blk, current_height, unspent, eng):
+async def checkpoint(blk, current_height, unspent, eng, boxes_tablename='boxes'):
     suffix = f'Checkpoint at {blk}...'
     if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
     else: logger.info(suffix)
     if VERBOSE: logger.info(blk)
     df = pd.DataFrame.from_dict({
         'box_id': list(unspent.keys()), 
-        'height': list(map(int, unspent.values())), # 'nergs': list(map(int, [v[0] for v in unspent.values()])), 
-        'is_unspent': [b!=-1 for b in list(unspent.values())]
+        'height': [n['height'] for n in unspent.values()], # list(map(int, unspent.values())), # 'nergs': list(map(int, [v[0] for v in unspent.values()])), 
+        'nerg': [n['nergs'] for n in unspent.values()],
+        'is_unspent': [n['height']!=-1 for n in unspent.values()], # [b!=-1 for b in list(unspent.values())]
     })
     # logger.info(df)
-    df.to_sql('checkpoint_boxes', eng, if_exists='replace')
+    df.to_sql(f'checkpoint_{boxes_tablename}', eng, if_exists='replace')
 
     # execute as transaction
     with eng.begin() as con:
         # remove spent
         sql = f'''
-            delete from boxes
+            delete from {boxes_tablename}
             where box_id in (
                 select box_id
-                from checkpoint_boxes
-                where is_unspent = false
+                from checkpoint_{boxes_tablename}
+                where is_unspent::boolean = false
             );
+        '''
+        con.execute(sql)
+
+        # track spent
+        sql = f'''
+            insert into spent_{boxes_tablename} (box_id)
+                select box_id
+                from checkpoint_{boxes_tablename}
+                where is_unspent::boolean = false
+            ;
         '''
         con.execute(sql)
 
         # add unspent
         sql = f'''
-            insert into boxes (box_id, height, is_unspent)
-                select c.box_id, c.height, c.is_unspent
-                from checkpoint_boxes c
-                    left join boxes b on b.box_id = c.box_id
-                where c.is_unspent = true
+            insert into {boxes_tablename} (box_id, height, is_unspent, nerg)
+                select c.box_id, c.height, c.is_unspent, c.nerg
+                from checkpoint_{boxes_tablename} c
+                    left join {boxes_tablename} b on b.box_id = c.box_id
+                where c.is_unspent::boolean = true
                     and b.box_id is null
                 ;
         '''
@@ -133,7 +156,7 @@ async def checkpoint(blk, current_height, unspent, eng):
 
         sql = f'''
             insert into audit_log (height, service)
-            values ({int(blk)}, 'main')
+            values ({int(blk)}, 'boxes_{boxes_tablename}')
         '''
         con.execute(sql)
 
@@ -146,27 +169,30 @@ async def process_boxes(args, t):
     node_network = node_info['network']
     unspent = {}
 
+    # only-alpha tablename
+    boxes_tablename = ''.join([i for i in args.juxtapose if i.isalpha()])
+
     # init or pull boxes from sql into unspent    
     if args.truncate:
         logger.warning('Truncate requested...')
-        sql = text(f'''truncate table boxes''')
+        sql = text(f'''truncate table {boxes_tablename}''')
         eng.execute(sql)
         sql = text(f'''insert into audit_log (height, service) values (0, 'main')''')
         eng.execute(sql)
     
     last_height = -1
-    if args.height > 0:
+    if args.height >= 0:
         # start from argparse
         logger.info(f'Rollback requested to block: {args.height}...')
         last_height = args.height-1
-        sql = text(f'''delete from boxes where height > {args.height}''')
+        sql = text(f'''delete from {boxes_tablename} where height > {args.height}''')
         eng.execute(sql)
 
     else:
         sql = text(f'''
             select height 
             from audit_log 
-            where service = 'main'
+            where service = 'boxes_{boxes_tablename}'
             order by created_at desc 
             limit 1
         ''')
@@ -227,8 +253,18 @@ async def process_boxes(args, t):
 
             # save current unspent to sql
             if (blk%CHECKPOINT_INTERVAL == 0) or (blk == current_height):
-                await checkpoint(blk, current_height, unspent, eng)
+                await checkpoint(blk, current_height, unspent, eng, boxes_tablename)
                 unspent = {}
+
+                # plugins
+                plugin_timer = Timer()
+                if plugin['staking']:
+                    if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix='Processing Plugin: Staking', length=50)
+                    await staking.process(-1, plugin_timer, use_checkpoint=True, boxes_tablename=f'checkpoint_{boxes_tablename}')
+                # if plugin['vesting']:
+                #     if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix='Processing Plugin: Vesting', length=50)
+                #     await vesting.process(-1, plugin_timer, use_checkpoint=True, boxes_tablename=f'checkpoint_{boxes_tablename}')
+                sec = plugin_timer.stop()
 
     return {
         'current_height' : current_height,
@@ -295,10 +331,16 @@ if __name__ == '__main__':
     app.start()
     
     # main loop
+    # args.juxtapose = 'jux' # testing
+    # args.oneanddone = True # testing
+    # logger.debug(args); exit(1)
     while not app.shutdown:
         try:
             last_block = asyncio.run(app.process_unspent(args))
-            asyncio.run(app.hibernate(last_block))
+            if args.oneanddone:
+                app.shutdown()
+            else:
+                asyncio.run(app.hibernate(last_block))
         except KeyboardInterrupt:
             logger.debug('Interrupted.')
             app.stop()
