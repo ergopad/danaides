@@ -3,7 +3,6 @@ import os, sys, time, signal
 import pandas as pd
 import argparse
 
-from plugins import staking
 from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar
 from plugins import staking
@@ -12,12 +11,16 @@ from os import getenv
 from base58 import b58encode
 # from pydantic import BaseModel
 
+from plugins import staking
+PLUGINS = {}
+# PLUGINS = {'staking': 1}
+
 parser = argparse.ArgumentParser()
-parser.add_argument("-J", "--juxtapose", help="Alternative table name", type=str, default='boxes')
+parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
 parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
 parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
 parser.add_argument("-P", "--prettyprint", help="Progress bar vs. scrolling", action='store_true')
-parser.add_argument("-O", "--oneanddone", help="When complete, finish", action='store_true')
+parser.add_argument("-O", "--once", help="When complete, finish", action='store_true')
 args = parser.parse_args()
 
 PRETTYPRINT = args.prettyprint
@@ -133,14 +136,14 @@ async def checkpoint(blk, current_height, unspent, eng, boxes_tablename='boxes')
         con.execute(sql)
 
         # track spent
-        sql = f'''
-            insert into spent_{boxes_tablename} (box_id)
-                select box_id
-                from checkpoint_{boxes_tablename}
-                where is_unspent::boolean = false
-            ;
-        '''
-        con.execute(sql)
+        # sql = f'''
+        #     insert into spent_{boxes_tablename} (box_id)
+        #         select box_id
+        #         from checkpoint_{boxes_tablename}
+        #         where is_unspent::boolean = false
+        #     ;
+        # '''
+        # con.execute(sql)
 
         # add unspent
         sql = f'''
@@ -156,7 +159,7 @@ async def checkpoint(blk, current_height, unspent, eng, boxes_tablename='boxes')
 
         sql = f'''
             insert into audit_log (height, service)
-            values ({int(blk)}, 'boxes_{boxes_tablename}')
+            values ({int(blk)}, '{boxes_tablename}')
         '''
         con.execute(sql)
 
@@ -184,7 +187,7 @@ async def process_boxes(args, t):
     if args.height >= 0:
         # start from argparse
         logger.info(f'Rollback requested to block: {args.height}...')
-        last_height = args.height-1
+        last_height = args.height
         sql = text(f'''delete from {boxes_tablename} where height > {args.height}''')
         eng.execute(sql)
 
@@ -192,7 +195,7 @@ async def process_boxes(args, t):
         sql = text(f'''
             select height 
             from audit_log 
-            where service = 'boxes_{boxes_tablename}'
+            where service = '{boxes_tablename}'
             order by created_at desc 
             limit 1
         ''')
@@ -258,8 +261,12 @@ async def process_boxes(args, t):
 
                 # plugins
                 plugin_timer = Timer()
-                if plugin['staking']:
-                    if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix='Processing Plugin: Staking', length=50)
+                plugin_timer.start()
+                if ('staking' in PLUGINS) and ():
+                    suffix = f'Processing Plugin: Staking'
+                    if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
+                    else: logger.debug(suffix)
+                    await staking.process(-1, plugin_timer, use_checkpoint=True, boxes_tablename=f'checkpoint_{boxes_tablename}')
                     await staking.process(-1, plugin_timer, use_checkpoint=True, boxes_tablename=f'checkpoint_{boxes_tablename}')
                 # if plugin['vesting']:
                 #     if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix='Processing Plugin: Vesting', length=50)
