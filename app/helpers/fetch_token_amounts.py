@@ -99,7 +99,7 @@ if __name__ == '__main__':
     for cfg in config:
         TOKEN_AMOUNTS[cfg['ergo_tree']] = cfg['token_id']
 
-    pred = f'where height > 750000'
+    pred = f'where height > 700000'
     sql = f'''
         select box_id
         from boxes
