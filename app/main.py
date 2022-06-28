@@ -16,8 +16,11 @@ class dotdict(dict):
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
 
-PLUGINS = dotdict({})
-# PLUGINS = dotdict({'staking': True}, {'vesting': True}, {'tokens': True})
+PLUGINS = dotdict({
+    'staking': True, 
+    'vesting': False, 
+    'tokens': False
+})
 
 parser = argparse.ArgumentParser()
 # parser.add_argument("-V", "--verbose", help="Wordy", action='store_true')
@@ -333,8 +336,16 @@ if __name__ == '__main__':
     # logger.debug(args); exit(1)
     while not app.shutdown:
         try:
+            # process unspent
             last_block = asyncio.run(app.process_unspent(args))
-            if True:
+
+            # process plugins
+            if PLUGINS.staking:
+                logger.debug('Staking plugin...')
+                asyncio.run(staking.process(last_block, use_checkpoint=True, boxes_tablename=args.juxtapose))
+
+            # quit or wait for next block
+            if args.once:
                 app.stop()
                 try: sys.exit(0)
                 except SystemExit: os._exit(0)            

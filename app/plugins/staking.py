@@ -3,7 +3,7 @@ import pandas as pd
 import argparse
 
 from time import sleep 
-from sqlalchemy import create_engine, text
+# from sqlalchemy import create_engine, text
 from utils.logger import logger, Timer, printProgressBar
 from utils.db import eng, text
 from utils.ergo import get_node_info, headers, NODE_APIKEY, NODE_URL
@@ -27,7 +27,7 @@ PRETTYPRINT = args.prettyprint
 VERBOSE = False
 NERGS2ERGS = 10**9
 UPDATE_INTERVAL = 100 # update progress display every X blocks
-CHECKPOINT_INTERVAL = 250 # save progress every X blocks
+CHECKPOINT_INTERVAL = 5000 # save progress every X blocks
 
 blips = []
 
@@ -73,11 +73,11 @@ async def checkpoint(addresses, keys_found, eng, staking_tablename='staking'):
                 from checkpoint_addresses_{staking_tablename}
             )
         '''
-        con.execute(sql)
+        # con.execute(sql)
 
         sql = f'''
-            insert into addresses_staking (address, token_id, amount, box_id)
-                select address, token_id, amount, box_id
+            insert into addresses_staking (address, token_id, amount, box_id, height)
+                select address, token_id, amount, box_id, height
                 from checkpoint_addresses_{staking_tablename}
         '''
         con.execute(sql)
@@ -89,27 +89,29 @@ async def checkpoint(addresses, keys_found, eng, staking_tablename='staking'):
                 from checkpoint_keys_{staking_tablename}
             )
         '''
-        con.execute(sql)
+        # con.execute(sql)
 
         sql = f'''
-            insert into keys_staking (box_id, token_id, amount, stakekey_token_id, penalty, address)
-                select box_id, token_id, amount, stakekey_token_id, penalty, address
+            insert into keys_staking (box_id, token_id, amount, stakekey_token_id, penalty, address, height)
+                select box_id, token_id, amount, stakekey_token_id, penalty, address, height
                 from checkpoint_keys_{staking_tablename}
         '''
         con.execute(sql)
 
 async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'boxes', box_override=''):
-    args.juxtapose = 'jux'
     t = Timer()
     t.start()
 
-    boxes_tablename = ''.join([i for i in args.juxtapose if i.isalpha()]) # only-alpha tablename
+    # manual boxes tablename
+    # box_override = '331a963bbb33542f347aac7be1259980b08284e9a54dcf21e60342104820ba65'
+    # box_override = 'ef7365a0d1817873e1f8e537ed0cc4dd32f80beb7f3f71799fb1a7da5f7d1802'
+    boxes_tablename = ''.join([i for i in boxes_tablename if i.isalpha()]) # only-alpha tablename
+
+    # find all stake keys
     sql = '''
         select stake_ergotree, stake_token_id, token_name, token_id, token_type, emission_amount, decimals 
         from tokens
     '''
-
-    # find all stake keys
     STAKE_KEYS = {}
     res = eng.execute(sql).fetchall()
     for key in res:
@@ -121,8 +123,16 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
             'decimals': key['decimals'],
         }
 
-    # call as library
+    # sql = f'select max(height) as height from {boxes_tablename}'
+    # max_height = eng.execute(sql).fetchone()['height']
+
+    ###
+    ### 1. Remove spent boxes from staking, keys
+    ### 2. Find the new boxes to process
+    ###
     if use_checkpoint:
+        logger.debug('Using checkpoint')
+
         # remove spent boxes from staking tables
         logger.info('Remove spent boxes...')
         with eng.begin() as con:
@@ -153,141 +163,124 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
 
             # find newly unspent boxes
             sql = f'''
-                select distinct b.box_id, height
+                select box_id, height, row_number() over(partition by is_unspent order by height) as r 
                 from checkpoint_{boxes_tablename}
                     where is_unspent::boolean = true
             '''
-            logger.info(f'Fetching all unspent boxes{msg}...')
-            boxes = eng.execute(sql).fetchall()
 
     # process as standalone call
     else:
-        # box_override is for testing
-        # box_override = '331a963bbb33542f347aac7be1259980b08284e9a54dcf21e60342104820ba65'
-        # box_override = 'ef7365a0d1817873e1f8e537ed0cc4dd32f80beb7f3f71799fb1a7da5f7d1802'
-        if box_override == '':
-            # where to start? find boxes with height > ...
-            #   1. if height from cli, use it
-            #   2. else check audit_log/staking for last height
-            #   3. otherwise do all boxes
-            if last_height >= 0:
-                logger.info(f'Block: {last_height}...')
+        logger.info('Finding boxes...')
+        if last_height >= 0:
+            logger.info(f'Above block height: {last_height}...')
 
-            else:
-                sql = f'''
-                    select height 
-                    from audit_log 
-                    where service = 'staking'
-                    order by created_at desc 
-                    limit 1
-                '''
-                res = eng.execute(sql).fetchone()
-                if res is not None:
-                    last_height = res['height']
-                else:
-                    last_height = -1   
-
-            sql = f'''
-                select box_id, b.height
-                from {boxes_tablename}
-                where height > {last_height}
-            '''
-
-        # !! used for testing; just processes single box
         else:
-            # box override
-            logger.info(f'Box override {box_override}...')
             sql = f'''
-                select box_id, height
-                from {boxes_tablename} 
-                where box_id in ('{box_override}')
+                select height 
+                from audit_log 
+                where service = 'staking'
+                order by created_at desc 
+                limit 1
             '''
-
-        # from last_height to new_height; by boxes
-        sql = f'''
-            select max(height) as height
-            from {boxes_tablename}
-        '''
-        max_height = eng.execute(sql).fetchone()['height']
+            res = eng.execute(sql).fetchone()
+            if res is not None:
+                last_height = res['height']
+            else:
+                last_height = 0  
 
         # remove spent boxes from staking tables
-        logger.info('Remove spent boxes...')
+        logger.info('Remove spent boxes from staking tables...')
         with eng.begin() as con:
-            # addresses
+            # addresses            
             sql = f'''
-                -- remove spent boxes from addresses
-                delete 
-                from addresses_staking 
-                where box_id in (
-                    select a.box_id 
+                with spent as (
+                    select a.box_id, a.height
                     from addresses_staking a
-                        left join boxes b on b.box_id = a.box_id
+                        left join {boxes_tablename} b on a.box_id = b.box_id
                     where b.box_id is null
                 )
+                delete from addresses_staking t
+                using spent s
+                where s.box_id = t.box_id
+                    and s.height = t.height
             '''
+            if VERBOSE: logger.debug(sql)
             con.execute(sql)
 
             sql = f'''
-                -- remove spent boxes from keys_staking
-                delete 
-                from keys_staking 
-                where box_id in (
-                    select a.box_id 
+                with spent as (
+                    select a.box_id, a.height
                     from keys_staking a
-                        left join boxes b on b.box_id = a.box_id
+                        left join {boxes_tablename} b on a.box_id = b.box_id
                     where b.box_id is null
                 )
+                delete from keys_staking t
+                using spent s
+                where s.box_id = t.box_id
+                    and s.height = t.height
             '''
+            if VERBOSE: logger.debug(sql)
             con.execute(sql)
 
-    '''
-    for all unspent boxes
-    1. find all legit stake keys (using stake tree/id), and amount
-    2. find all addresses with a token
-    3. find ergs
-    4. last updated
-    '''
-    suffix = f'''Begin processing at: {last_height}; current node height: {max_height}'''
-    if PRETTYPRINT: printProgressBar(last_height, max_height, prefix='Progress:', suffix=suffix, length=50)
-    else: logger.debug(suffix)
-
-    stakekey_counter = 0    
-    box_count = 0
-    key_counter = 0
-    address_counter = 0
-    for current_height in range(last_height+CHECKPOINT_INTERVAL, max_height+CHECKPOINT_INTERVAL, CHECKPOINT_INTERVAL):
-        # find newly unspent boxes
-        next_height = current_height-1
-        if next_height > max_height:
-            next_height = max_height-1
-        logger.debug(f'Find unspent boxes between {last_height} and {next_height}')
+        '''
+        to find unspent boxes to process
+        1. if there is a an override set, grab that box
+        2. if incremental, pull boxes above certain height
+        4. or, just pull all unspent boxes and process in batches
+        '''
         sql = f'''
-            select box_id, height
+            select box_id, height, row_number() over(partition by is_unspent order by height) as r
             from {boxes_tablename}
-            where height between {last_height} and {next_height}
         '''
         if box_override != '':
-            sql = f'''
-                    select box_id, height
-                    from {boxes_tablename} 
-                    where box_id in ('{box_override}')
-                '''
-        # find boxes to search
-        boxes = eng.execute(sql).fetchall()
-        box_count = len(boxes)
+            sql += f'''where box_id in ('{box_override}')'''
+        elif True:
+            sql += f'''where height >= {last_height}'''
 
-        suffix = f'''Find stake keys {last_height}/{next_height} [{key_counter} keys/{address_counter} adrs] {t.split()}                '''
-        if PRETTYPRINT: printProgressBar(last_height, max_height, prefix='Progress:', suffix=suffix, length=50)
+    # find boxes from checkpoint or standard sql query
+    if VERBOSE: logger.debug(sql)
+    boxes = eng.execute(sql).fetchall()
+    box_count = len(boxes)    
+
+    stakekey_counter = 0    
+    key_counter = 0
+    address_counter = 0
+    max_height = 0
+    last_r = 1
+
+    logger.info(f'Begin processing, {box_count} boxes total...')
+
+    # process all new, unspent boxes
+    for r in range(last_r-1, box_count, CHECKPOINT_INTERVAL):
+        next_r = r+CHECKPOINT_INTERVAL-1
+        if next_r > box_count:
+            next_r = box_count
+
+        suffix = f'''{t.split()} :: ({key_counter}/{address_counter}) Process ...'''+(' '*80)
+        if PRETTYPRINT: printProgressBar(r, box_count, prefix='Progress:', suffix=suffix, length=50)
         else: logger.debug(suffix)
 
         try:
             keys_found = {}
             addresses = {}
 
-            urls = [[box['height'], f'''{NODE_URL}/utxo/byId/{box['box_id']}'''] for box in boxes]
+            urls = [[box['height'], f'''{NODE_URL}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
 
+            # ------------
+            # primary loop
+            # ------------
+            # using get_json_ordered so that the height can be tagged to the box_id
+            # .. although the height exists in the utxo, the height used is from what is stored in the database
+            # .. these 2 heights should be the same, but not spent the time to validate.  May be able to simplify if these are always the same
+            # from this loop, look for keys, addresses, assets, etc..
+            # sometimes the node gets overwhelmed so using a retry counter (TODO: is there a better way?)
             utxo = await get_json_ordered(urls, headers)
             for address, box_id, assets, registers, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[1]] for u in utxo if u[0] == 200]:
+                # find height for audit (and checkpoint?)
+                if height > max_height:
+                    max_height = height
+                
+                # build keys and addresses objext
                 retries = 0
                 while retries < 5:
                     if retries > 0:
@@ -334,8 +327,8 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
             address_counter += len(addresses)
 
             # save current unspent to sql
-            suffix = f'Checkpoint at: {next_height}...'+(' '*80)
-            if PRETTYPRINT: printProgressBar(next_height, max_height, prefix='Progress:', suffix=suffix, length=50)
+            suffix = f'{t.split()} :: ({key_counter}/{address_counter}) Checkpoint ({len(keys_found)} new keys, {len(addresses)} new adrs)...'+(' '*80)
+            if PRETTYPRINT: printProgressBar(next_r, box_count, prefix='Progress:', suffix=suffix, length=50)
             else: logger.info(suffix)
             await checkpoint(addresses, keys_found, eng)
 
@@ -343,12 +336,12 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
             notes = f'''{len(addresses)} addresses, {len(keys_found)} keys'''
             sql = f'''
                 insert into audit_log (height, service, notes)
-                values ({next_height}, 'staking', '{notes}')
+                values ({max_height}, 'staking', '{notes}')
             '''
             eng.execute(sql)
 
             # reset for outer loop: height range
-            last_height = current_height
+            last_r = r
             addresses = {}
             keys_found = {}
             if box_override != '':
@@ -363,6 +356,41 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
             retries += 1
             sleep(1)
             pass
+
+    # cleanup
+    try:
+        logger.debug('Cleanup staking tables...')
+        sql = f'''
+            with dup as (    
+                select id, address, token_id, box_id, amount, height, row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
+                from addresses_staking 
+                -- where address != ''
+            )
+            delete from addresses_staking where id in (
+                select id
+                from dup 
+                where r > 1 
+            )
+        '''
+        eng.execute(sql)
+
+        sql = f'''
+            with dup as (    
+                select id, address, token_id, box_id, amount, height, row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
+                from keys_staking 
+                -- where address != ''
+            )
+            delete from keys_staking where id in (
+                select id
+                from dup 
+                where r > 1 
+            )
+        '''
+        eng.execute(sql)
+
+    except Exception as e:
+        logger.debug('ERR: cleaning dups {e}')
+        pass
 
     sec = t.stop()
     logger.debug(f'Processing complete: {sec:0.4f}s...                ')
@@ -399,11 +427,11 @@ async def hibernate():
 #endregion FUNCTIONS
 
 async def main(args):
+    # args.juxtapose = 'jux'
     last_height = args.height
-    end_height = args.endat
 
     while True:
-        res = await process(last_height)
+        res = await process(last_height, boxes_tablename=args.juxtapose)
         last_height = await hibernate()
 
 if __name__ == '__main__':
