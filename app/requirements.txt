@@ -2,7 +2,7 @@ requests
 colorlog
 base58
 pydantic
-
+aiohttp
 pandas
 
 sqlalchemy

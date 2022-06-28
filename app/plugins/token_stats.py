@@ -85,7 +85,6 @@ async def get_current_total_supply(token_id):
     return total_supply
     # return 398977967
 
-
 async def get_in_circulation(token_id):
     total_supply = await get_current_total_supply(token_id)
 
