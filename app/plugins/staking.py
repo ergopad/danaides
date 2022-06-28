@@ -3,8 +3,11 @@ import pandas as pd
 import argparse
 
 from time import sleep 
-from sqlalchemy import create_engine, text
+# from sqlalchemy import create_engine, text
 from utils.logger import logger, Timer, printProgressBar
+from utils.db import eng, text
+from utils.ergo import get_node_info, headers, NODE_APIKEY, NODE_URL
+from utils.aioreq import get_json, get_json_ordered
 from requests import get
 from os import getenv
 from base58 import b58encode
@@ -12,49 +15,25 @@ from pydantic import BaseModel
 from ergo_python_appkit.appkit import ErgoValue
 
 parser = argparse.ArgumentParser()
+parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
 parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
 parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
+parser.add_argument("-E", "--endat", help="End at this height", type=int, default=10**10)
 parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
 args = parser.parse_args()
 
+# ready, go
 PRETTYPRINT = args.prettyprint
 VERBOSE = False
-
-DB_DANAIDES = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DBNM')}"
-NODE_APIKEY = getenv('ERGOPAD_APIKEY')
-NODE_URL = f'''http://{getenv('NODE_URL')}:{getenv('NODE_PORT')}'''
 NERGS2ERGS = 10**9
-
-# ready, go
 UPDATE_INTERVAL = 100 # update progress display every X blocks
-CHECKPOINT_INTERVAL = 1000 # save progress every X blocks
+CHECKPOINT_INTERVAL = 5000 # save progress every X blocks
 
-headers = {'Content-Type': 'application/json', 'api_key': NODE_APIKEY}
 blips = []
 
-def b58(n): 
-    return b58encode(bytes.fromhex(n)).decode('utf-8')
-
-def get_node_info():
-    res = get(f'{NODE_URL}/info', headers=headers, timeout=2)
-    node_info = None
-    if not res.ok:
-        logger.error(f'unable to retrieve node info: {res.text}')
-        exit()
-    else:
-        node_info = res.json()
-        if VERBOSE: logger.debug(node_info)
-    
-    # return 10000 # testing
-    return node_info
-
-async def checkpoint(blk, box_count, addresses, keys_found, eng):
-    suffix = f'Checkpoint at {blk}...'+(' '*80)
-    if PRETTYPRINT: printProgressBar(blk, box_count, prefix='Progress:', suffix=suffix, length=50)
-    else: logger.info(suffix)
-
+async def checkpoint(addresses, keys_found, eng, staking_tablename='staking'):
     # addresses
-    addrtokens = {'address': [], 'token_id': [], 'amount': [], 'box_id': []}
+    addrtokens = {'address': [], 'token_id': [], 'amount': [], 'box_id': [], 'height': []}
     addr_counter = {}
     addr_converter = {}
     for raw, tokens in addresses.items():
@@ -69,9 +48,10 @@ async def checkpoint(blk, box_count, addresses, keys_found, eng):
             addrtokens['token_id'].append(token['token_id'])
             addrtokens['amount'].append(token['amount'])
             addrtokens['box_id'].append(token['box_id'])
+            addrtokens['height'].append(token['height'])
             addr_counter[pubkey] = 1
     df_addresses = pd.DataFrame().from_dict(addrtokens)
-    df_addresses.to_sql('checkpoint_addresses_staking', eng, if_exists='replace')
+    df_addresses.to_sql(f'checkpoint_addresses_{staking_tablename}', eng, if_exists='replace')
 
     # stake keys
     df_keys_staking = pd.DataFrame().from_dict({
@@ -81,23 +61,24 @@ async def checkpoint(blk, box_count, addresses, keys_found, eng):
         'penalty': [x['penalty'] for x in keys_found.values()],
         'address': [addr_converter[x['address']] for x in keys_found.values()],
         'stakekey_token_id': [x['stakekey_token_id'] for x in keys_found.values()],
+        'height': [x['height'] for x in keys_found.values()],
     })
-    df_keys_staking.to_sql('checkpoint_keys_staking', eng, if_exists='replace')
+    df_keys_staking.to_sql(f'checkpoint_keys_{staking_tablename}', eng, if_exists='replace')
 
     with eng.begin() as con:
         # addresses
         sql = f'''
             delete from addresses_staking where box_id in (
                 select box_id::text
-                from checkpoint_addresses_staking
+                from checkpoint_addresses_{staking_tablename}
             )
         '''
-        con.execute(sql)
+        # con.execute(sql)
 
         sql = f'''
-            insert into addresses_staking (address, token_id, amount, box_id)
-                select address, token_id, amount, box_id
-                from checkpoint_addresses_staking
+            insert into addresses_staking (address, token_id, amount, box_id, height)
+                select address, token_id, amount, box_id, height
+                from checkpoint_addresses_{staking_tablename}
         '''
         con.execute(sql)
 
@@ -105,33 +86,32 @@ async def checkpoint(blk, box_count, addresses, keys_found, eng):
         sql = f'''
             delete from keys_staking where box_id in (
                 select box_id::text
-                from checkpoint_keys_staking
+                from checkpoint_keys_{staking_tablename}
             )
         '''
-        con.execute(sql)
+        # con.execute(sql)
 
         sql = f'''
-            insert into keys_staking (box_id, token_id, amount, stakekey_token_id, penalty, address)
-                select box_id, token_id, amount, stakekey_token_id, penalty, address
-                from checkpoint_keys_staking
+            insert into keys_staking (box_id, token_id, amount, stakekey_token_id, penalty, address, height)
+                select box_id, token_id, amount, stakekey_token_id, penalty, address, height
+                from checkpoint_keys_{staking_tablename}
         '''
         con.execute(sql)
 
-        notes = f'''{len(addr_counter)} addresses, {len(keys_found)} keys'''
-        sql = f'''
-            insert into audit_log (height, service, notes)
-            values ({int(blk)}, 'staking', '{notes}')
-        '''
-        con.execute(sql)
+async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'boxes', box_override=''):
+    t = Timer()
+    t.start()
 
-async def process(last_height, t):
-    eng = create_engine(DB_DANAIDES)
+    # manual boxes tablename
+    # box_override = '331a963bbb33542f347aac7be1259980b08284e9a54dcf21e60342104820ba65'
+    # box_override = 'ef7365a0d1817873e1f8e537ed0cc4dd32f80beb7f3f71799fb1a7da5f7d1802'
+    boxes_tablename = ''.join([i for i in boxes_tablename if i.isalpha()]) # only-alpha tablename
+
+    # find all stake keys
     sql = '''
         select stake_ergotree, stake_token_id, token_name, token_id, token_type, emission_amount, decimals 
         from tokens
     '''
-
-    # find all stake keys
     STAKE_KEYS = {}
     res = eng.execute(sql).fetchall()
     for key in res:
@@ -142,162 +122,278 @@ async def process(last_height, t):
             'emission_amount': key['emission_amount'],
             'decimals': key['decimals'],
         }
-    keys_found = {}
-    addresses = {}
-    # logger.debug(STAKE_KEYS); exit(1)
 
-    # where to start? find boxes with height > ...
-    #   1. if height from cli, use it
-    #   2. else check audit_log/staking for last height
-    #   3. otherwise do all boxes
-    if last_height > 0:
-        logger.info(f'Rollback requested to block: {last_height}...')
+    # sql = f'select max(height) as height from {boxes_tablename}'
+    # max_height = eng.execute(sql).fetchone()['height']
 
+    ###
+    ### 1. Remove spent boxes from staking, keys
+    ### 2. Find the new boxes to process
+    ###
+    if use_checkpoint:
+        logger.debug('Using checkpoint')
+
+        # remove spent boxes from staking tables
+        logger.info('Remove spent boxes...')
+        with eng.begin() as con:
+            # addresses
+            sql = f'''
+                -- remove spent boxes from addresses_staking from current boxes checkpoint
+                delete 
+                from addresses_staking 
+                where box_id in (
+                    select box_id
+                    from checkpoint_{boxes_tablename}
+                    -- where is_unspent::boolean = false -- remove all; unspent will reprocess below??
+                )
+            '''
+            con.execute(sql)
+
+            sql = f'''
+                -- remove spent boxes from keys_staking from current boxes checkpoint
+                delete 
+                from keys_staking 
+                where box_id in (
+                    select box_id
+                    from checkpoint_{boxes_tablename}
+                    -- where is_unspent::boolean = false -- remove all; unspent will reprocess below??
+                )
+            '''
+            con.execute(sql)
+
+            # find newly unspent boxes
+            sql = f'''
+                select box_id, height, row_number() over(partition by is_unspent order by height) as r 
+                from checkpoint_{boxes_tablename}
+                    where is_unspent::boolean = true
+            '''
+
+    # process as standalone call
     else:
-        sql = f'''
-            select height 
-            from audit_log 
-            where service = 'staking'
-            order by created_at desc 
-            limit 1
-        '''
-        res = eng.execute(sql).fetchone()
-        if res is not None:
-            last_height = res['height']        
-    
-    # find newly unspent boxes
-    sql = f'''
-        select distinct b.box_id, b.height
-        from boxes b
-            left join addresses_staking a on a.box_id = b.box_id
-            left join keys_staking k on k.box_id = b.box_id
-        where is_unspent = true
-            and (a.box_id is null or k.box_id is null)
-    '''
-    msg = ''
-    if last_height > 0:
-        sql += f'and b.height > {last_height-3}' # be safe until this is chained behind box imports
-        msg = f', beginning at height {last_height}' # ?? TODO: how to make height work with only box ids
+        logger.info('Finding boxes...')
+        if last_height >= 0:
+            logger.info(f'Above block height: {last_height}...')
 
-    logger.info(f'Fetching all unspent boxes{msg}...')
+        else:
+            sql = f'''
+                select height 
+                from audit_log 
+                where service = 'staking'
+                order by created_at desc 
+                limit 1
+            '''
+            res = eng.execute(sql).fetchone()
+            if res is not None:
+                last_height = res['height']
+            else:
+                last_height = 0  
+
+        # remove spent boxes from staking tables
+        logger.info('Remove spent boxes from staking tables...')
+        with eng.begin() as con:
+            # addresses            
+            sql = f'''
+                with spent as (
+                    select a.box_id, a.height
+                    from addresses_staking a
+                        left join {boxes_tablename} b on a.box_id = b.box_id
+                    where b.box_id is null
+                )
+                delete from addresses_staking t
+                using spent s
+                where s.box_id = t.box_id
+                    and s.height = t.height
+            '''
+            if VERBOSE: logger.debug(sql)
+            con.execute(sql)
+
+            sql = f'''
+                with spent as (
+                    select a.box_id, a.height
+                    from keys_staking a
+                        left join {boxes_tablename} b on a.box_id = b.box_id
+                    where b.box_id is null
+                )
+                delete from keys_staking t
+                using spent s
+                where s.box_id = t.box_id
+                    and s.height = t.height
+            '''
+            if VERBOSE: logger.debug(sql)
+            con.execute(sql)
+
+        '''
+        to find unspent boxes to process
+        1. if there is a an override set, grab that box
+        2. if incremental, pull boxes above certain height
+        4. or, just pull all unspent boxes and process in batches
+        '''
+        sql = f'''
+            select box_id, height, row_number() over(partition by is_unspent order by height) as r
+            from {boxes_tablename}
+        '''
+        if box_override != '':
+            sql += f'''where box_id in ('{box_override}')'''
+        elif True:
+            sql += f'''where height >= {last_height}'''
+
+    # find boxes from checkpoint or standard sql query
+    if VERBOSE: logger.debug(sql)
     boxes = eng.execute(sql).fetchall()
-    box_count = len(boxes)
+    box_count = len(boxes)    
 
-    # remove spent boxes from staking tables
-    logger.info('Remove spent boxes...')
-    with eng.begin() as con:
-        # addresses
-        sql = f'''
-            -- remove spent boxes from addresses
-            delete from addresses_staking
-            using addresses_staking a
-                left join boxes b on b.box_id = a.box_id
-            where b.is_unspent = true
-                and b.box_id is null
-        '''
-        con.execute(sql)
-
-        sql = f'''
-            -- remove spent boxes from keys_staking
-            delete from keys_staking
-            using keys_staking a
-                left join boxes b on b.box_id = a.box_id
-            where b.is_unspent = true
-                and b.box_id is null
-        '''
-        con.execute(sql)
-
-    '''
-    for all unspent boxes
-    1. find all legit stake keys (using stake tree/id), and amount
-    2. find all addresses with a token
-    3. find ergs
-    4. last updated
-    '''
-    logger.info(f'Find all staking keys from {box_count} boxes...')
-    blk = 0
-    blip_counter = 0
     stakekey_counter = 0    
-    for box in boxes:
-        box_id = box['box_id']
-        # box_id = 'c9c622ddce1e9d3a8ee07c16575a5aeefd33fa5557b93f26ff22cf879eeb7f21'
-        suffix = f'''stake keys: {stakekey_counter}/addresses: {len(addresses)}/blips: {blip_counter}/{box_id} {t.split()}'''
-        if PRETTYPRINT: printProgressBar(blk, box_count, prefix='Progress:', suffix=suffix, length=50)
+    key_counter = 0
+    address_counter = 0
+    max_height = 0
+    last_r = 1
+
+    logger.info(f'Begin processing, {box_count} boxes total...')
+
+    # process all new, unspent boxes
+    for r in range(last_r-1, box_count, CHECKPOINT_INTERVAL):
+        next_r = r+CHECKPOINT_INTERVAL-1
+        if next_r > box_count:
+            next_r = box_count
+
+        suffix = f'''{t.split()} :: ({key_counter}/{address_counter}) Process ...'''+(' '*80)
+        if PRETTYPRINT: printProgressBar(r, box_count, prefix='Progress:', suffix=suffix, length=50)
         else: logger.debug(suffix)
-        blk += 1
 
-        retries = 0
-        while retries < 5:
-            try:
-                with get(f'''{NODE_URL}/utxo/byId/{box_id}''', headers=headers, timeout=2) as res:
-                    if res.status_code == 404:
-                        if VERBOSE: logger.warning(f'BLIP: {box_id}')
-                        blip_counter += 1
-                        pass
-                        # logger.error(f'Only unspent boxes allowed on this endpoint; consider updating boxes table: {box}')
+        try:
+            keys_found = {}
+            addresses = {}
 
-                    # logger.warning(res.text); sleep(5)
-                    if res.ok:
-                        utxo = res.json()
-                        address = utxo['ergoTree']
-                        assets = utxo['assets']
-                        nergs = utxo['value']
-                        raw = address[6:]
-                        if address in STAKE_KEYS:   
-                            stake_token_id = STAKE_KEYS[address]['stake_token_id']
-                            # found ergopad staking key
-                            if stake_token_id in [tk['tokenId'] for tk in assets]:
-                                if VERBOSE: logger.debug(f'found ergopad staking token in box: {box}')
-                                stakekey_counter += 1
-                                R4_1 = ErgoValue.fromHex(utxo['additionalRegisters']['R4']).getValue().apply(1)
-                                keys_found[box_id] = {
-                                    'stakekey_token_id': utxo['additionalRegisters']['R5'][4:], # TODO: validate that this starts with 0e20 ??
-                                    'amount': assets[1]['amount'],
-                                    'token_id': stake_token_id,
-                                    'penalty': int(R4_1),
-                                    'address': raw
-                                }
+            urls = [[box['height'], f'''{NODE_URL}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
 
-                        # store assets by address
-                        if len(assets) > 0:
-                            # init for address
-                            if raw not in addresses:
-                                addresses[raw] = []
-                            
-                            # save assets
-                            for asset in assets:
-                                addresses[raw].append({
-                                    'token_id': asset['tokenId'], 
-                                    'amount': asset['amount'],
-                                    'box_id': box_id,
-                                })
+            # ------------
+            # primary loop
+            # ------------
+            # using get_json_ordered so that the height can be tagged to the box_id
+            # .. although the height exists in the utxo, the height used is from what is stored in the database
+            # .. these 2 heights should be the same, but not spent the time to validate.  May be able to simplify if these are always the same
+            # from this loop, look for keys, addresses, assets, etc..
+            # sometimes the node gets overwhelmed so using a retry counter (TODO: is there a better way?)
+            utxo = await get_json_ordered(urls, headers)
+            for address, box_id, assets, registers, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[1]] for u in utxo if u[0] == 200]:
+                # find height for audit (and checkpoint?)
+                if height > max_height:
+                    max_height = height
+                
+                # build keys and addresses objext
+                retries = 0
+                while retries < 5:
+                    if retries > 0:
+                        logger.warning(f'retry: {retries}')
+                    if VERBOSE: logger.debug(address)
+                    raw = address[6:]
+                    if VERBOSE: logger.warning(address)
+                    if address in STAKE_KEYS:   
+                        stake_token_id = STAKE_KEYS[address]['stake_token_id']
+                        # found ergopad staking key
+                        if VERBOSE: logger.warning(assets[0]['tokenId'])
+                        if assets[0]['tokenId'] == stake_token_id:
+                            logger.debug(f'found ergopad staking token in box: {box_id}')
+                            stakekey_counter += 1
+                            try: R4_1 = ErgoValue.fromHex(registers['R4']).getValue().apply(1)
+                            except: logger.warning(f'R4 not found: {box_id}')
+                            keys_found[box_id] = {
+                                'stakekey_token_id': registers['R5'][4:], # TODO: validate that this starts with 0e20 ??
+                                'amount': assets[1]['amount'],
+                                'token_id': stake_token_id,
+                                'penalty': int(R4_1),
+                                'address': raw,
+                                'height': height,
+                            }                            
 
-                            if VERBOSE: logger.debug(addresses[raw])
-
-                    else:
-                        if VERBOSE: logger.error('bonk')    
-
+                    # store assets by address
+                    if len(assets) > 0:
+                        # init for address
+                        if raw not in addresses:
+                            addresses[raw] = []
+                        
+                        # save assets
+                        for asset in assets:
+                            addresses[raw].append({
+                                'token_id': asset['tokenId'], 
+                                'amount': asset['amount'],
+                                'box_id': box_id,
+                                'height': height,
+                            })
+                    
                     retries = 5
-            
-            except Exception as e:
-                logger.error(f'ERR: {e}')
-                retries += 1
-                sleep(1)
-                pass
 
-        # update progress bar on screen
-        if blk%UPDATE_INTERVAL == 0:
-            suffix = f'''{blk}/addr:{len(addresses.keys())}/keys:{len(keys_found.keys())}/{t.split()} ({len(blips)} blips)'''
-            if PRETTYPRINT: printProgressBar(blk, box_count, prefix='Progress:', suffix=suffix, length=50)
-            else: logger.info(suffix)                
+            key_counter += len(keys_found)
+            address_counter += len(addresses)
 
-        # save current unspent to sql
-        if (blk%CHECKPOINT_INTERVAL == 0) or (blk == box_count):
-            await checkpoint(blk, box_count, addresses, keys_found, eng)
+            # save current unspent to sql
+            suffix = f'{t.split()} :: ({key_counter}/{address_counter}) Checkpoint ({len(keys_found)} new keys, {len(addresses)} new adrs)...'+(' '*80)
+            if PRETTYPRINT: printProgressBar(next_r, box_count, prefix='Progress:', suffix=suffix, length=50)
+            else: logger.info(suffix)
+            await checkpoint(addresses, keys_found, eng)
+
+            # track staking height here (since looping through boxes)
+            notes = f'''{len(addresses)} addresses, {len(keys_found)} keys'''
+            sql = f'''
+                insert into audit_log (height, service, notes)
+                values ({max_height}, 'staking', '{notes}')
+            '''
+            eng.execute(sql)
+
+            # reset for outer loop: height range
+            last_r = r
             addresses = {}
             keys_found = {}
-    
-    logger.debug('Complete.')
+            if box_override != '':
+                exit(1)
+
+        except KeyError as e:
+            logger.error(f'ERR (KeyError): {e}; {box_id}')
+            pass
+        
+        except Exception as e:
+            logger.error(f'ERR: {e}; {box_id}')
+            retries += 1
+            sleep(1)
+            pass
+
+    # cleanup
+    try:
+        logger.debug('Cleanup staking tables...')
+        sql = f'''
+            with dup as (    
+                select id, address, token_id, box_id, amount, height, row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
+                from addresses_staking 
+                -- where address != ''
+            )
+            delete from addresses_staking where id in (
+                select id
+                from dup 
+                where r > 1 
+            )
+        '''
+        eng.execute(sql)
+
+        sql = f'''
+            with dup as (    
+                select id, address, token_id, box_id, amount, height, row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
+                from keys_staking 
+                -- where address != ''
+            )
+            delete from keys_staking where id in (
+                select id
+                from dup 
+                where r > 1 
+            )
+        '''
+        eng.execute(sql)
+
+    except Exception as e:
+        logger.debug('ERR: cleaning dups {e}')
+        pass
+
+    sec = t.stop()
+    logger.debug(f'Processing complete: {sec:0.4f}s...                ')
 
     eng.dispose()
     return {
@@ -308,8 +404,8 @@ async def hibernate():
     inf = get_node_info()
     last_height = inf['fullHeight']
     current_height = last_height
-    t = Timer()
-    t.start()
+    hibernate_timer = Timer()
+    hibernate_timer.start()
 
     logger.info('Waiting for next block...')
     infinity_counter = 0
@@ -318,28 +414,25 @@ async def hibernate():
         current_height = inf['fullHeight']
 
         if PRETTYPRINT: 
-            print(f'''\r({current_height}) {t.split()} Waiting for next block{'.'*(infinity_counter%4)}    ''', end = "\r")
+            print(f'''\r{current_height} :: {hibernate_timer.split()} Waiting for next block{'.'*(infinity_counter%4)}    ''', end = "\r")
             infinity_counter += 1
 
         sleep(1)
 
-    sec = t.stop()
-    logger.debug(f'Block took {sec:0.4f}s...')     
+    sec = hibernate_timer.stop()
+    logger.debug(f'Next block {sec:0.4f}s...')     
+    sleep(5) # hack, make sure we wait long enough to let unspent boxes to refresh
     return last_height
 
 #endregion FUNCTIONS
 
 async def main(args):
+    # args.juxtapose = 'jux'
     last_height = args.height
+
     while True:
-        t = Timer()
-        t.start()
-
-        res = await process(last_height, t)
+        res = await process(last_height, boxes_tablename=args.juxtapose)
         last_height = await hibernate()
-
-        sec = t.stop()
-        logger.debug(f'Block took {sec:0.4f}s...')
 
 if __name__ == '__main__':
     res = asyncio.run(main(args))

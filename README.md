@@ -112,7 +112,10 @@ create table tokens (
     emission_amount bigint, -- 400M
     decimals int, -- 2
     stake_token_id varchar(64), -- ergopad Stake Token
-    stake_ergotree varchar(2000)
+    stake_ergotree varchar(2000),
+    current_total_supply bigint,
+    in_circulation bigint,
+    token_price numeric(10, 2)
 );
 
 -- use /utils/addressToRaw/{address} on the smart contract to get stake_ergotree
@@ -152,3 +155,11 @@ values (
     2000000000000
 );
 
+create table token_agg (
+    id serial not null primary key,
+    ergo_tree text,
+    token_id varchar(64),
+    height int,
+    amount bigint,
+    created_at timestamp default now()
+)
