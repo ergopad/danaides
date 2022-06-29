@@ -33,7 +33,7 @@ args = parser.parse_args()
 
 PRETTYPRINT = args.prettyprint
 VERBOSE = False
-FETCH_INTERVAL = 2500
+FETCH_INTERVAL = 1500
 
 sql = f'''
     select ergo_tree, token_id
@@ -84,7 +84,7 @@ async def add_outputs(outputs: dict, unspent: dict, height: int = -1) -> dict:
     return new
 
 # upsert current chunk
-async def checkpoint(blk, current_height, unspent, eng, boxes_tablename='boxes'):
+async def checkpoint(blk, unspent, boxes_tablename='boxes'):
     df = pd.DataFrame.from_dict({
         'box_id': list(unspent.keys()), 
         'height': [n['height'] for n in unspent.values()], # list(map(int, unspent.values())), # 'nergs': list(map(int, [v[0] for v in unspent.values()])), 
@@ -125,7 +125,7 @@ async def checkpoint(blk, current_height, unspent, eng, boxes_tablename='boxes')
 
         sql = f'''
             insert into audit_log (height, service)
-            values ({int(blk)}, '{boxes_tablename}')
+            values ({int(blk)-1}, '{boxes_tablename}')
         '''
         if VERBOSE: logger.debug(sql)
         con.execute(sql)
@@ -135,12 +135,9 @@ async def process(args, t):
     # find unspent boxes at current height
     node_info = get_node_info()
     current_height = node_info['fullHeight']
-    node_version = node_info['appVersion']
-    node_network = node_info['network']
     unspent = {}
     last_height = -1
     boxes_tablename = ''.join([i for i in args.juxtapose if i.isalpha()]) # only-alpha tablename
-    # current_height = 10000 # testing
 
     # init or pull boxes from sql into unspent    
     if args.truncate:
@@ -171,7 +168,7 @@ async def process(args, t):
         ht = eng.execute(sql).fetchone()
         if ht is not None:
             if ht['height'] > 0:
-                last_height = ht['height']
+                last_height = ht['height']+1
                 logger.info(f'Existing boxes found, starting at {last_height}...')
     
         # nothing found, start from beginning
@@ -184,7 +181,7 @@ async def process(args, t):
 
     # lets gooooo...
     try:
-        if last_height == current_height:
+        if last_height >= current_height:
             logger.warning('Already caught up...')
         while last_height < current_height:
             next_height = last_height+FETCH_INTERVAL
@@ -192,18 +189,14 @@ async def process(args, t):
                 next_height = current_height
             batch_order = range(last_height, next_height)
 
-            logger.warning(f'last: {last_height}/{next_height}, max: {current_height}')
-
             # find block headers
-            if VERBOSE: logger.debug(1)
-            suffix = f'''Blocks: {last_height}/{next_height}..{current_height}             '''
+            suffix = f'''BLOCKS: last: {last_height}/{next_height}, max: {current_height}             '''
             if PRETTYPRINT: printProgressBar(last_height, current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
             else: logger.info(suffix)
             urls = [[blk, f'{NODE_URL}/blocks/at/{blk}'] for blk in batch_order]
             block_headers = await get_json_ordered(urls, headers)
 
             # find transactions
-            if VERBOSE: logger.debug(2)
             suffix = f'''Transactions: {last_height}/{next_height}..{current_height}             '''
             if PRETTYPRINT: printProgressBar(int(last_height+(FETCH_INTERVAL/3)), current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
             else: logger.info(suffix)
@@ -211,7 +204,6 @@ async def process(args, t):
             blocks = await get_json_ordered(urls, headers)
 
             # recreate blockchain (must put together in order)
-            if VERBOSE: logger.debug(3)
             suffix = f'''Filter Unspent: {last_height}/{next_height}..{current_height}              '''
             if PRETTYPRINT: printProgressBar(int(last_height+(2*FETCH_INTERVAL/3)), current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
             else: logger.info(suffix)
@@ -235,30 +227,14 @@ async def process(args, t):
 
 
             # checkpoint
-            if VERBOSE: logger.debug(4)
+            if VERBOSE: logger.debug('Checkpointing...')
             last_height += FETCH_INTERVAL
             suffix = f'Checkpoint at {next_height}...                  '
             if PRETTYPRINT: printProgressBar(next_height, current_height, prefix=f'{t.split()}s', suffix=suffix, length=50)
             else: logger.info(suffix)
-            await checkpoint(next_height, current_height, unspent, eng, boxes_tablename)
+            await checkpoint(next_height, unspent, boxes_tablename)
                 
-            if VERBOSE: logger.debug(5)
-            if False:
-                # plugins
-                plugin_timer = Timer()
-                plugin_timer.start()
-                if ('staking' in PLUGINS):
-                    suffix = f'Processing Plugin: Staking'
-                    if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix=suffix, length=50)
-                    else: logger.debug(suffix)
-                    await staking.process(-1, plugin_timer, use_checkpoint=True, boxes_tablename=f'checkpoint_{boxes_tablename}')
-                # if plugin['vesting']:
-                #     if PRETTYPRINT: printProgressBar(blk, current_height, prefix='Progress:', suffix='Processing Plugin: Vesting', length=50)
-                #     await vesting.process(-1, plugin_timer, use_checkpoint=True, boxes_tablename=f'checkpoint_{boxes_tablename}')
-                sec = plugin_timer.stop()
-
             unspent = {}
-
 
     except KeyboardInterrupt:
         logger.error('Interrupted.')
@@ -331,18 +307,35 @@ if __name__ == '__main__':
     app.start()
     
     # main loop
-    args.juxtapose = 'jux' # testing
+    # args.juxtapose = 'jux' # testing
     # args.once = True # testing
     # logger.debug(args); exit(1)
     while not app.shutdown:
         try:
             # process unspent
             last_block = asyncio.run(app.process_unspent(args))
+            args.height = -1 # figure out height next time around; don't use cli height
 
             # process plugins
             if PLUGINS.staking:
-                logger.debug('Staking plugin...')
-                asyncio.run(staking.process(last_block, use_checkpoint=True, boxes_tablename=args.juxtapose))
+                logger.info('PLUGIN: Staking...')
+                sql = f'''
+                    select height 
+                    from audit_log 
+                    where service = 'staking'
+                    order by created_at desc 
+                    limit 1
+                '''
+                res = eng.execute(sql).fetchone()
+                last_staking_block = 0  
+                if res is not None: 
+                    logger.info('Existing staking info found...')
+                    last_staking_block = res['height']
+                else:
+                    logger.info('No staking info found; rebuiding from height 0...')
+                use_checkpoint = last_staking_block == last_block
+                logger.debug('Sync main and staking plugin...')
+                asyncio.run(staking.process(last_staking_block, use_checkpoint=use_checkpoint, boxes_tablename=args.juxtapose))
 
             # quit or wait for next block
             if args.once:

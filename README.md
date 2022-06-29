@@ -163,3 +163,33 @@ create table token_agg (
     amount bigint,
     created_at timestamp default now()
 )
+
+## PIT Tables
+Create point-in-time tables to save reprocess time.  This is currently manual, but could be integrated pretty easily.
+An issue with starting at a lower height is:
+- tx A happens at height 10 - utxo box id is X
+- tx B happens at height 20 - utxo box id is Y, X is now spent
+- starting process at height 15, Y will be removed cause the height is lower than 20, but X will not exist.
+- .. if catching up to current, this should not matter as it will be re-found at height 20
+- .. if you are starting at a lower height, the reason may require the state match to point in time properly
+
+```sql
+-- drop PIT, boxes_XYZPDQ
+create table boxes_654321 (
+    id serial not null primary key,
+    box_id varchar(64),
+    height int, 
+    is_unspent bool,
+    nerg bigint
+);
+
+-- populate boxes
+select max(height) from boxes
+
+-- to restart, 
+insert into boxes
+    select * from boxes_654321
+
+-- make sure the processor can figure this out
+insert into audit_log (height, service) values (654321, 'boxes')
+```

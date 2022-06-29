@@ -134,7 +134,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
         logger.debug('Using checkpoint')
 
         # remove spent boxes from staking tables
-        logger.info('Remove spent boxes...')
+        logger.info('Remove spent boxes using checkpoint tables...')
         with eng.begin() as con:
             # addresses
             sql = f'''
@@ -144,7 +144,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
                 where box_id in (
                     select box_id
                     from checkpoint_{boxes_tablename}
-                    -- where is_unspent::boolean = false -- remove all; unspent will reprocess below??
+                    where is_unspent::boolean = false -- remove all; unspent will reprocess below??
                 )
             '''
             con.execute(sql)
@@ -156,7 +156,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
                 where box_id in (
                     select box_id
                     from checkpoint_{boxes_tablename}
-                    -- where is_unspent::boolean = false -- remove all; unspent will reprocess below??
+                    where is_unspent::boolean = false -- remove all; unspent will reprocess below??
                 )
             '''
             con.execute(sql)
@@ -170,6 +170,8 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
 
     # process as standalone call
     else:
+        logger.info('Sleeping to make sure boxes are processed...')
+        sleep(5)
         logger.info('Finding boxes...')
         if last_height >= 0:
             logger.info(f'Above block height: {last_height}...')
@@ -256,7 +258,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
         if next_r > box_count:
             next_r = box_count
 
-        suffix = f'''{t.split()} :: ({key_counter}/{address_counter}) Process ...'''+(' '*80)
+        suffix = f'''{t.split()} :: ({key_counter}/{address_counter}) Process ...'''+(' '*20)
         if PRETTYPRINT: printProgressBar(r, box_count, prefix='Progress:', suffix=suffix, length=50)
         else: logger.debug(suffix)
 
@@ -293,7 +295,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
                         # found ergopad staking key
                         if VERBOSE: logger.warning(assets[0]['tokenId'])
                         if assets[0]['tokenId'] == stake_token_id:
-                            logger.debug(f'found ergopad staking token in box: {box_id}')
+                            if VERBOSE: logger.debug(f'found ergopad staking token in box: {box_id}')
                             stakekey_counter += 1
                             try: R4_1 = ErgoValue.fromHex(registers['R4']).getValue().apply(1)
                             except: logger.warning(f'R4 not found: {box_id}')
@@ -327,7 +329,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
             address_counter += len(addresses)
 
             # save current unspent to sql
-            suffix = f'{t.split()} :: ({key_counter}/{address_counter}) Checkpoint ({len(keys_found)} new keys, {len(addresses)} new adrs)...'+(' '*80)
+            suffix = f'{t.split()} :: ({key_counter}/{address_counter}) Checkpoint ({len(keys_found)} new keys, {len(addresses)} new adrs)...'+(' '*20)
             if PRETTYPRINT: printProgressBar(next_r, box_count, prefix='Progress:', suffix=suffix, length=50)
             else: logger.info(suffix)
             await checkpoint(addresses, keys_found, eng)
@@ -362,7 +364,8 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
         logger.debug('Cleanup staking tables...')
         sql = f'''
             with dup as (    
-                select id, address, token_id, box_id, amount, height, row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
+                select id, address, token_id, box_id, amount, height
+                    , row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
                 from addresses_staking 
                 -- where address != ''
             )
@@ -372,11 +375,12 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
                 where r > 1 
             )
         '''
-        eng.execute(sql)
+        # eng.execute(sql) # TODO: distinct in CTE of call from api.staking
 
         sql = f'''
             with dup as (    
-                select id, address, token_id, box_id, amount, height, row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
+                select id, address, token_id, box_id, amount, height
+                    , row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
                 from keys_staking 
                 -- where address != ''
             )
@@ -389,7 +393,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
         eng.execute(sql)
 
     except Exception as e:
-        logger.debug('ERR: cleaning dups {e}')
+        logger.debug(f'ERR: cleaning dups {e}')
         pass
 
     sec = t.stop()
@@ -398,18 +402,17 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
     eng.dispose()
     return {
         'box_count': box_count,
+        'last_height': max_height,
     }
 
-async def hibernate():
-    inf = get_node_info()
-    last_height = inf['fullHeight']
-    current_height = last_height
+async def hibernate(new_height):
+    current_height = new_height
     hibernate_timer = Timer()
     hibernate_timer.start()
 
     logger.info('Waiting for next block...')
     infinity_counter = 0
-    while last_height == current_height:
+    while new_height == current_height:
         inf = get_node_info()
         current_height = inf['fullHeight']
 
@@ -421,18 +424,19 @@ async def hibernate():
 
     sec = hibernate_timer.stop()
     logger.debug(f'Next block {sec:0.4f}s...')     
-    sleep(5) # hack, make sure we wait long enough to let unspent boxes to refresh
-    return last_height
+
+    return current_height
 
 #endregion FUNCTIONS
 
 async def main(args):
     # args.juxtapose = 'jux'
-    last_height = args.height
+    new_height = args.height
 
     while True:
-        res = await process(last_height, boxes_tablename=args.juxtapose)
-        last_height = await hibernate()
+        res = await process(new_height, boxes_tablename=args.juxtapose)
+        new_height = res['last_height']+1
+        await hibernate(new_height)
 
 if __name__ == '__main__':
     res = asyncio.run(main(args))
