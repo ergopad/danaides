@@ -28,6 +28,7 @@ VERBOSE = False
 NERGS2ERGS = 10**9
 UPDATE_INTERVAL = 100 # update progress display every X blocks
 CHECKPOINT_INTERVAL = 5000 # save progress every X blocks
+CLEANUP_NEEDED = False
 
 blips = []
 
@@ -65,38 +66,33 @@ async def checkpoint(addresses, keys_found, eng, staking_tablename='staking'):
     })
     df_keys_staking.to_sql(f'checkpoint_keys_{staking_tablename}', eng, if_exists='replace')
 
-    with eng.begin() as con:
-        # addresses
-        sql = f'''
-            delete from addresses_staking where box_id in (
-                select box_id::text
-                from checkpoint_addresses_{staking_tablename}
-            )
-        '''
-        # con.execute(sql)
+    # addresses
+    sql = f'''
+        insert into addresses_staking (address, token_id, amount, box_id, height)
+            select c.address, c.token_id, c.amount, c.box_id, c.height
+            from checkpoint_addresses_{staking_tablename} c
+                left join addresses_staking a on a.address = c.address::text
+                    and a.token_id = c.token_id::varchar(64)
+                    and a.box_id = a.box_id::varchar(64)
+                    and a.height = c.height
+            where c.address::text != '' -- unusable, don't store
+                and a.box_id::varchar(64) is null -- avoid duplicates
+    '''
+    eng.execute(sql)
 
-        sql = f'''
-            insert into addresses_staking (address, token_id, amount, box_id, height)
-                select address, token_id, amount, box_id, height
-                from checkpoint_addresses_{staking_tablename}
-        '''
-        con.execute(sql)
-
-        # staking (keys)
-        sql = f'''
-            delete from keys_staking where box_id in (
-                select box_id::text
-                from checkpoint_keys_{staking_tablename}
-            )
-        '''
-        # con.execute(sql)
-
-        sql = f'''
-            insert into keys_staking (box_id, token_id, amount, stakekey_token_id, penalty, address, height)
-                select box_id, token_id, amount, stakekey_token_id, penalty, address, height
-                from checkpoint_keys_{staking_tablename}
-        '''
-        con.execute(sql)
+    # staking (keys)
+    sql = f'''
+        insert into keys_staking (box_id, token_id, amount, stakekey_token_id, penalty, address, height)
+            select c.box_id, c.token_id, c.amount, c.stakekey_token_id, c.penalty, c.address, c.height
+            from checkpoint_keys_{staking_tablename} c
+                left join keys_staking a on a.address = c.address::text
+                    and a.token_id = c.token_id::varchar(64)
+                    and a.box_id = a.box_id::varchar(64)
+                    and a.height = c.height
+            where c.address::text != '' -- unusable, don't store
+                and a.box_id::varchar(64) is null -- avoid duplicates
+    '''
+    eng.execute(sql)
 
 async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'boxes', box_override=''):
     t = Timer()
@@ -135,43 +131,42 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
 
         # remove spent boxes from staking tables
         logger.info('Remove spent boxes using checkpoint tables...')
-        with eng.begin() as con:
-            # addresses
-            sql = f'''
-                -- remove spent boxes from addresses_staking from current boxes checkpoint
-                delete 
-                from addresses_staking 
-                where box_id in (
-                    select box_id
-                    from checkpoint_{boxes_tablename}
-                    where is_unspent::boolean = false -- remove all; unspent will reprocess below??
-                )
-            '''
-            con.execute(sql)
-
-            sql = f'''
-                -- remove spent boxes from keys_staking from current boxes checkpoint
-                delete 
-                from keys_staking 
-                where box_id in (
-                    select box_id
-                    from checkpoint_{boxes_tablename}
-                    where is_unspent::boolean = false -- remove all; unspent will reprocess below??
-                )
-            '''
-            con.execute(sql)
-
-            # find newly unspent boxes
-            sql = f'''
-                select box_id, height, row_number() over(partition by is_unspent order by height) as r 
+        # addresses
+        sql = f'''
+            -- remove spent boxes from addresses_staking from current boxes checkpoint
+            delete 
+            from addresses_staking 
+            where box_id in (
+                select box_id
                 from checkpoint_{boxes_tablename}
-                    where is_unspent::boolean = true
-            '''
+                where is_unspent::boolean = false -- remove all; unspent will reprocess below??
+            )
+        '''
+        eng.execute(sql)
+
+        sql = f'''
+            -- remove spent boxes from keys_staking from current boxes checkpoint
+            delete 
+            from keys_staking 
+            where box_id in (
+                select box_id
+                from checkpoint_{boxes_tablename}
+                where is_unspent::boolean = false -- remove all; unspent will reprocess below??
+            )
+        '''
+        eng.execute(sql)
+
+        # find newly unspent boxes
+        sql = f'''
+            select box_id, height, row_number() over(partition by is_unspent order by height) as r 
+            from checkpoint_{boxes_tablename}
+                where is_unspent::boolean = true
+        '''
 
     # process as standalone call
     else:
         logger.info('Sleeping to make sure boxes are processed...')
-        sleep(5)
+        sleep(2)
         logger.info('Finding boxes...')
         if last_height >= 0:
             logger.info(f'Above block height: {last_height}...')
@@ -192,37 +187,36 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
 
         # remove spent boxes from staking tables
         logger.info('Remove spent boxes from staking tables...')
-        with eng.begin() as con:
-            # addresses            
-            sql = f'''
-                with spent as (
-                    select a.box_id, a.height
-                    from addresses_staking a
-                        left join {boxes_tablename} b on a.box_id = b.box_id
-                    where b.box_id is null
-                )
-                delete from addresses_staking t
-                using spent s
-                where s.box_id = t.box_id
-                    and s.height = t.height
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)
+        # addresses            
+        sql = f'''
+            with spent as (
+                select a.box_id, a.height
+                from addresses_staking a
+                    left join {boxes_tablename} b on a.box_id = b.box_id
+                where b.box_id is null
+            )
+            delete from addresses_staking t
+            using spent s
+            where s.box_id = t.box_id
+                and s.height = t.height
+        '''
+        if VERBOSE: logger.debug(sql)
+        eng.execute(sql)
 
-            sql = f'''
-                with spent as (
-                    select a.box_id, a.height
-                    from keys_staking a
-                        left join {boxes_tablename} b on a.box_id = b.box_id
-                    where b.box_id is null
-                )
-                delete from keys_staking t
-                using spent s
-                where s.box_id = t.box_id
-                    and s.height = t.height
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)
+        sql = f'''
+            with spent as (
+                select a.box_id, a.height
+                from keys_staking a
+                    left join {boxes_tablename} b on a.box_id = b.box_id
+                where b.box_id is null
+            )
+            delete from keys_staking t
+            using spent s
+            where s.box_id = t.box_id
+                and s.height = t.height
+        '''
+        if VERBOSE: logger.debug(sql)
+        eng.execute(sql)
 
         '''
         to find unspent boxes to process
@@ -267,7 +261,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
             addresses = {}
 
             urls = [[box['height'], f'''{NODE_URL}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
-
+            if VERBOSE: logger.debug(f'slice: {r}:{next_r} / up to height: {boxes[next_r-1]["height"]}')
             # ------------
             # primary loop
             # ------------
@@ -361,36 +355,37 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
 
     # cleanup
     try:
-        logger.debug('Cleanup staking tables...')
-        sql = f'''
-            with dup as (    
-                select id, address, token_id, box_id, amount, height
-                    , row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
-                from addresses_staking 
-                -- where address != ''
-            )
-            delete from addresses_staking where id in (
-                select id
-                from dup 
-                where r > 1 
-            )
-        '''
-        # eng.execute(sql) # TODO: distinct in CTE of call from api.staking
+        if CLEANUP_NEEDED:
+            logger.debug('Cleanup staking tables...')
+            sql = f'''
+                with dup as (    
+                    select id, address, token_id, box_id, amount, height
+                        , row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
+                    from addresses_staking 
+                    -- where address != ''
+                )
+                delete from addresses_staking where id in (
+                    select id
+                    from dup 
+                    where r > 1 
+                )
+            '''
+            eng.execute(sql) 
 
-        sql = f'''
-            with dup as (    
-                select id, address, token_id, box_id, amount, height
-                    , row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
-                from keys_staking 
-                -- where address != ''
-            )
-            delete from keys_staking where id in (
-                select id
-                from dup 
-                where r > 1 
-            )
-        '''
-        eng.execute(sql)
+            sql = f'''
+                with dup as (    
+                    select id, address, token_id, box_id, amount, height
+                        , row_number() over(partition by address, token_id, box_id, amount, height order by id desc) as r
+                    from keys_staking 
+                    -- where address != ''
+                )
+                delete from keys_staking where id in (
+                    select id
+                    from dup 
+                    where r > 1 
+                )
+            '''
+            eng.execute(sql)
 
     except Exception as e:
         logger.debug(f'ERR: cleaning dups {e}')
