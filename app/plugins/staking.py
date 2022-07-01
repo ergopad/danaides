@@ -126,35 +126,70 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
     ### 1. Remove spent boxes from staking, keys
     ### 2. Find the new boxes to process
     ###
+
+    # remove spent boxes from staking tables
+    logger.info('Remove spent boxes from staking tables...')
+    with eng.begin() as con:
+        # addresses            
+        sql = text(f'''
+            with spent as (
+                select a.box_id, a.height
+                from addresses_staking a
+                    left join {boxes_tablename} b on a.box_id = b.box_id
+                where b.box_id is null
+            )
+            delete from addresses_staking t
+            using spent s
+            where s.box_id = t.box_id
+                and s.height = t.height
+        ''')
+        if VERBOSE: logger.debug(sql)
+        con.execute(sql)
+
+        sql = text(f'''
+            with spent as (
+                select a.box_id, a.height
+                from keys_staking a
+                    left join {boxes_tablename} b on a.box_id = b.box_id
+                where b.box_id is null
+            )
+            delete from keys_staking t
+            using spent s
+            where s.box_id = t.box_id
+                and s.height = t.height
+        ''')
+        if VERBOSE: logger.debug(sql)
+        con.execute(sql)
+
     if use_checkpoint:
         logger.debug('Using checkpoint')
 
         # remove spent boxes from staking tables
-        logger.info('Remove spent boxes using checkpoint tables...')
+        # logger.info('Remove spent boxes using checkpoint tables...')
         # addresses
-        sql = f'''
-            -- remove spent boxes from addresses_staking from current boxes checkpoint
-            delete 
-            from addresses_staking 
-            where box_id in (
-                select box_id
-                from checkpoint_{boxes_tablename}
-                where is_unspent::boolean = false -- remove all; unspent will reprocess below??
-            )
-        '''
-        eng.execute(sql)
+        # sql = f'''
+        #     -- remove spent boxes from addresses_staking from current boxes checkpoint
+        #     delete 
+        #     from addresses_staking 
+        #     where box_id in (
+        #         select box_id
+        #         from checkpoint_{boxes_tablename}
+        #         where is_unspent::boolean = false -- remove all; unspent will reprocess below??
+        #     )
+        # '''
+        # eng.execute(sql)
 
-        sql = f'''
-            -- remove spent boxes from keys_staking from current boxes checkpoint
-            delete 
-            from keys_staking 
-            where box_id in (
-                select box_id
-                from checkpoint_{boxes_tablename}
-                where is_unspent::boolean = false -- remove all; unspent will reprocess below??
-            )
-        '''
-        eng.execute(sql)
+        # sql = f'''
+        #     -- remove spent boxes from keys_staking from current boxes checkpoint
+        #     delete 
+        #     from keys_staking 
+        #     where box_id in (
+        #         select box_id
+        #         from checkpoint_{boxes_tablename}
+        #         where is_unspent::boolean = false -- remove all; unspent will reprocess below??
+        #     )
+        # '''
+        # eng.execute(sql)
 
         # find newly unspent boxes
         sql = f'''
@@ -185,38 +220,38 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
             else:
                 last_height = 0  
 
-        # remove spent boxes from staking tables
-        logger.info('Remove spent boxes from staking tables...')
-        # addresses            
-        sql = f'''
-            with spent as (
-                select a.box_id, a.height
-                from addresses_staking a
-                    left join {boxes_tablename} b on a.box_id = b.box_id
-                where b.box_id is null
-            )
-            delete from addresses_staking t
-            using spent s
-            where s.box_id = t.box_id
-                and s.height = t.height
-        '''
-        if VERBOSE: logger.debug(sql)
-        eng.execute(sql)
+        # # remove spent boxes from staking tables
+        # logger.info('Remove spent boxes from staking tables...')
+        # # addresses            
+        # sql = f'''
+        #     with spent as (
+        #         select a.box_id, a.height
+        #         from addresses_staking a
+        #             left join {boxes_tablename} b on a.box_id = b.box_id
+        #         where b.box_id is null
+        #     )
+        #     delete from addresses_staking t
+        #     using spent s
+        #     where s.box_id = t.box_id
+        #         and s.height = t.height
+        # '''
+        # if VERBOSE: logger.debug(sql)
+        # eng.execute(sql)
 
-        sql = f'''
-            with spent as (
-                select a.box_id, a.height
-                from keys_staking a
-                    left join {boxes_tablename} b on a.box_id = b.box_id
-                where b.box_id is null
-            )
-            delete from keys_staking t
-            using spent s
-            where s.box_id = t.box_id
-                and s.height = t.height
-        '''
-        if VERBOSE: logger.debug(sql)
-        eng.execute(sql)
+        # sql = f'''
+        #     with spent as (
+        #         select a.box_id, a.height
+        #         from keys_staking a
+        #             left join {boxes_tablename} b on a.box_id = b.box_id
+        #         where b.box_id is null
+        #     )
+        #     delete from keys_staking t
+        #     using spent s
+        #     where s.box_id = t.box_id
+        #         and s.height = t.height
+        # '''
+        # if VERBOSE: logger.debug(sql)
+        # eng.execute(sql)
 
         '''
         to find unspent boxes to process

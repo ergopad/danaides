@@ -8,7 +8,7 @@ from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar
 from utils.ergo import get_node_info, get_genesis_block, headers, NODE_URL, NODE_APIKEY
 from utils.aioreq import get_json, get_json_ordered
-from plugins import staking
+from plugins import staking, tokenomics
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -19,7 +19,7 @@ class dotdict(dict):
 PLUGINS = dotdict({
     'staking': True, 
     'vesting': False, 
-    'tokens': False
+    'tokenomics': True
 })
 
 parser = argparse.ArgumentParser()
@@ -316,7 +316,11 @@ if __name__ == '__main__':
             last_block = asyncio.run(app.process_unspent(args))
             args.height = -1 # figure out height next time around; don't use cli height
 
-            # process plugins
+            ##
+            ## PLUGINS
+            ##            
+
+            # STAKING
             if PLUGINS.staking:
                 logger.info('PLUGIN: Staking...')
                 sql = f'''
@@ -336,6 +340,11 @@ if __name__ == '__main__':
                 use_checkpoint = last_staking_block == last_block
                 logger.debug('Sync main and staking plugin...')
                 asyncio.run(staking.process(last_staking_block, use_checkpoint=use_checkpoint, boxes_tablename=args.juxtapose))
+
+            # TOKENOMICS
+            if PLUGINS.tokenomics:
+                logger.info('PLUGIN: Tokenomics...')
+                asyncio.run(tokenomics.process(use_checkpoint=True))
 
             # quit or wait for next block
             if args.once:

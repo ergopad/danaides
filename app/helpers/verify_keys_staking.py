@@ -25,7 +25,10 @@ UPDATE_INTERVAL = 100 # update progress display every X blocks
 CHECKPOINT_INTERVAL = 5000 # save progress every X blocks
 CLEANUP_NEEDED = False
 
-async def process(last_height, boxes_tablename:str = 'boxes', box_override=''):
+async def process():
+    last_height = args.height
+    tabl
+
     t = Timer()
     t.start()
 
@@ -180,13 +183,6 @@ async def process(last_height, boxes_tablename:str = 'boxes', box_override=''):
     }
 #endregion FUNCTIONS
 
-async def main(args):
-    # args.juxtapose = 'jux'
-    new_height = args.height
-
-    res = await process(new_height, boxes_tablename=args.juxtapose)
-    return res
-
 if __name__ == '__main__':
-    res = asyncio.run(main(args))
+    res = asyncio.run(main())
     print(res)
