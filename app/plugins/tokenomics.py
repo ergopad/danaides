@@ -106,6 +106,7 @@ async def get_ergo_price():
 
 async def process(use_checkpoint = False):
     try:
+        box_id = -1
         # manual boxes tablename
         # box_override = '331a963bbb33542f347aac7be1259980b08284e9a54dcf21e60342104820ba65'
         # box_override = 'ef7365a0d1817873e1f8e537ed0cc4dd32f80beb7f3f71799fb1a7da5f7d1802'
@@ -192,14 +193,28 @@ async def process(use_checkpoint = False):
                 'in_circulation': in_circulation,
                 'amount': 0
             }
-            sql = text(f'''
-                update tokens 
-                set token_price = :token_price
-                    , in_circulation = :in_circulation
-                where token_name = :token_name
-            ''')
-            with eng.begin() as con:
-                con.execute(sql, {'token_price': price, 'token_name': token_name, 'in_circulation': in_circulation})
+            
+            # don't update if API bonked; keep existing value
+            if price != -1:
+                sql = text(f'''
+                    update tokens 
+                    set token_price = :token_price
+                        , in_circulation = :in_circulation
+                    where token_name = :token_name
+                ''')
+                with eng.begin() as con:
+                    con.execute(sql, {'token_price': price, 'token_name': token_name, 'in_circulation': in_circulation})
+
+            # don't update if API bonked; keep existing value
+            if in_circulation != -1:
+                sql = text(f'''
+                    update tokens 
+                    set token_price = :token_price
+                        , in_circulation = :in_circulation
+                    where token_name = :token_name
+                ''')
+                with eng.begin() as con:
+                    con.execute(sql, {'token_price': price, 'token_name': token_name, 'in_circulation': in_circulation})
         if VERBOSE: logger.info(TOKENS)
 
         max_height = 0

@@ -5,7 +5,7 @@ import argparse
 
 from requests import get
 from utils.db import eng, text
-from utils.logger import logger, myself, Timer, printProgressBar
+from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, headers, NODE_URL, NODE_APIKEY
 from utils.aioreq import get_json, get_json_ordered
 from plugins import staking, tokenomics
@@ -299,7 +299,7 @@ class App:
             time.sleep(1)
 
         sec = t.stop()
-        logger.debug(f'Block took {sec:0.4f}s...')        
+        logger.log(LEIF, f'Block took {sec:0.4f}s...')        
 
 ### MAIN
 if __name__ == '__main__':
@@ -322,7 +322,7 @@ if __name__ == '__main__':
 
             # STAKING
             if PLUGINS.staking:
-                logger.info('PLUGIN: Staking...')
+                logger.warning('PLUGIN: Staking...')
                 sql = f'''
                     select height 
                     from audit_log 
@@ -343,7 +343,7 @@ if __name__ == '__main__':
 
             # TOKENOMICS
             if PLUGINS.tokenomics:
-                logger.info('PLUGIN: Tokenomics...')
+                logger.warning('PLUGIN: Tokenomics...')
                 asyncio.run(tokenomics.process(use_checkpoint=True))
 
             # quit or wait for next block
