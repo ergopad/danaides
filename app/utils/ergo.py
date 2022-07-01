@@ -2,6 +2,7 @@ from requests import get
 from base58 import b58encode
 from os import getenv
 
+ERGOPAD_API = getenv('ERGOPAD_API')
 NODE_APIKEY = getenv('ERGOPAD_APIKEY')
 NODE_URL = f'''http://{getenv('NODE_URL')}:{getenv('NODE_PORT')}'''
 NERGS2ERGS = 10**9

@@ -7,7 +7,7 @@ from time import sleep
 # from sqlalchemy import create_engine, text
 from utils.logger import logger, Timer, printProgressBar
 from utils.db import eng, text
-from utils.ergo import get_node_info, headers, NODE_APIKEY, NODE_URL
+from utils.ergo import get_node_info, headers, NODE_APIKEY, NODE_URL, ERGOPAD_API
 from utils.aioreq import get_json, get_json_ordered
 from ergo_python_appkit.appkit import ErgoValue
 from requests import get
@@ -23,7 +23,6 @@ args = parser.parse_args()
 
 # ready, go
 ERGUSD_ORACLE_API = 'https://erg-oracle-ergusd.spirepools.com/frontendData'
-ERGOPAD_API = 'http://54.214.59.165:8000/api'
 PRETTYPRINT = args.prettyprint
 VERBOSE = False
 NERGS2ERGS = 10**9
