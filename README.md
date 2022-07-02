@@ -155,6 +155,7 @@ values (
     2000000000000
 );
 
+# store config for special keys
 create table token_agg (
     id serial not null primary key,
     ergo_tree text,
@@ -162,6 +163,16 @@ create table token_agg (
     height int,
     amount bigint,
     created_at timestamp default now()
+)
+
+# store token_agg values from blockchain
+create table tokens_tokenomics_agg (
+    id serial not null primary key, 
+    agg_id int, 
+    token_id varchar(64),
+    amount bigint,
+    box_id varchar(64),
+    height int
 )
 
 ## PIT Tables
