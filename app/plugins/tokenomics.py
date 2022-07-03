@@ -399,20 +399,19 @@ async def process(use_checkpoint = False):
                 where token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
             '''
             res = con.execute(sql)
-            
+
             # update in_circulation
             sql = text(f'''
                 with s as (
-                    select
-                        sum(k.amount)/power(10, max(t.decimals)) as current_total_supply
-                        , k.token_id::text
-                    from tokens_tokenomics k
-						join tokens t on t.token_id = k.token_id
-                    group by k.token_id
+                    select sum(amount) as current_total_supply
+                        , token_id::text
+                    from tokens_tokenomics
+                    group by token_id
                 )
                 update tokens set current_total_supply = s.current_total_supply
-                    , in_circulation = s.current_total_supply - tokens.vested - tokens.emitted - tokens.stake_pool
+                    , in_circulation = s.current_total_supply/power(10, t.decimals) - tokens.vested - tokens.emitted - tokens.stake_pool
                 from s
+                    join tokens t on t.token_id = s.token_id
 				where s.token_id = tokens.token_id
             ''')
             res = con.execute(sql)
