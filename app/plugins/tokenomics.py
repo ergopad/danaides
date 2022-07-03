@@ -350,10 +350,16 @@ async def process(use_checkpoint = False):
                         left join tokens t on t.token_id = k.token_id
                     group by k.token_id
                         , t.token_price
+                ), agg as (
+                    select token_id, sum(coalesce(amount, 0.0)) as agg_amount
+                    from token_agg
+                    group by token_id
                 )
                 update tokens set current_total_supply = s.current_total_supply
                     , token_price = s.token_price
+                    , in_circulation = s.current_total_supply - a.agg_amount
                 from s
+                    left join agg a on a.token_id = s.token_id
                 where s.token_id = tokens.token_id
             ''')
             res = con.execute(sql)
