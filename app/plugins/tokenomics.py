@@ -1,6 +1,5 @@
 import asyncio
 import argparse
-from tkinter import E
 import pandas as pd
 import json
 
