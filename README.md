@@ -209,6 +209,19 @@ values (
     'vested'
 );
 
+# tokens_tokenomics
+create table tokens_tokenomics
+(
+    id serial not null primary key,
+    address text,
+    token_id varchar(64),
+    box_id varchar(64),
+    amount bigint,
+    height integer
+);
+alter table tokens_tokenomics add unique (box_id, token_id);
+create index tokens_tokenomics_boxid on tokens_tokenomics (box_id);
+
 # store token_agg values from blockchain
 create table tokens_tokenomics_agg (
     id serial not null primary key, 
