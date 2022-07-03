@@ -5,7 +5,7 @@ import json
 
 from time import sleep 
 # from sqlalchemy import create_engine, text
-from utils.logger import logger, Timer, printProgressBar
+from utils.logger import logger, Timer, printProgressBar, LEIF
 from utils.db import eng, text
 from utils.ergo import get_node_info, headers, NODE_APIKEY, NODE_URL, ERGOPAD_API
 from utils.aioreq import get_json, get_json_ordered
@@ -129,6 +129,7 @@ async def process(use_checkpoint = False):
             from {boxes_tablename}
         '''
         if box_override != '':
+            logger.warning('Box override found...')
             sql += f'''where box_id in ('{box_override}')'''
         else:
             sql += f'''where height >= {last_height}'''
@@ -159,21 +160,12 @@ async def process(use_checkpoint = False):
         with eng.begin() as con:
             con.execute(sql)
 
-        # reset to height
-        logger.debug('  >= last_height')
-        sql = text(f'''
-            delete from tokens_tokenomics
-            where height >= :last_height
-        ''')
-        with eng.begin() as con:
-            con.execute(sql, {'last_height': last_height})
-
         # remove spent boxes
         logger.debug('  spent tokens_tokenomics_agg')
         sql = text(f'''
             with spent as (
                 select t.box_id
-                from tokens_tokenomics t
+                from tokens_tokenomics_agg t
                     left join boxes b on b.box_id = t.box_id
                 where b.box_id is null
             )
@@ -184,14 +176,25 @@ async def process(use_checkpoint = False):
         with eng.begin() as con:
             con.execute(sql)
 
-        # reset to height
-        logger.debug('  >= last_height')
-        sql = text(f'''
-            delete from tokens_tokenomics_agg
-            where height >= :last_height
-        ''')
-        with eng.begin() as con:
-            con.execute(sql, {'last_height': last_height})
+        # if height specified, cleanup
+        if last_height > -1:
+            # reset to height
+            logger.debug('  >= last_height')
+            sql = text(f'''
+                delete from tokens_tokenomics
+                where height >= :last_height
+            ''')
+            with eng.begin() as con:
+                con.execute(sql, {'last_height': last_height})
+
+            # reset to height
+            logger.debug('  >= last_height')
+            sql = text(f'''
+                delete from tokens_tokenomics_agg
+                where height >= :last_height
+            ''')
+            with eng.begin() as con:
+                con.execute(sql, {'last_height': last_height})
 
         # TOKEN Aggregations
         logger.debug('Token aggregations...')
@@ -259,7 +262,7 @@ async def process(use_checkpoint = False):
         logger.info(f'Begin processing, {box_count} boxes total...')
         token_counter = ', '.join([f'''{t['token_name']}:-''' for token_id, t in TOKENS.items()])
         for r in range(last_r-1, box_count, CHECKPOINT_INTERVAL):
-            next_r = r+CHECKPOINT_INTERVAL-1
+            next_r = r+CHECKPOINT_INTERVAL
             if next_r > box_count:
                 next_r = box_count
 
@@ -272,7 +275,7 @@ async def process(use_checkpoint = False):
                 aggs = {}
 
                 urls = [[box['height'], f'''{NODE_URL}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
-                utxo = await get_json_ordered(urls, headers)
+                utxo = await get_json_ordered(urls, headers)   
                 for address, box_id, assets, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[1]] for u in utxo if u[0] == 200]:
                     # find height for audit (and checkpoint?)
                     if height > max_height:
@@ -335,24 +338,77 @@ async def process(use_checkpoint = False):
                 pass
 
         logger.debug('Final tokenomics step...')
-        sql = text(f'''
-            with s as (
-                select
-                    sum(k.amount) as current_total_supply
-                    , t.token_price
-                    , k.token_id::text
-                -- select sum(amount)
-                from tokens_tokenomics k
-                    left join tokens t on t.token_id = k.token_id
-                group by k.token_id
-                    , t.token_price
-            )
-            update tokens set current_total_supply = s.current_total_supply
-                , token_price = s.token_price
-            from s
-            where s.token_id = tokens.token_id
-        ''')
         with eng.begin() as con:
+            sql = text(f'''
+                with s as (
+                    select
+                        sum(k.amount) as current_total_supply
+                        , t.token_price
+                        , k.token_id::text
+                    -- select sum(amount)
+                    from tokens_tokenomics k
+                        left join tokens t on t.token_id = k.token_id
+                    group by k.token_id
+                        , t.token_price
+                )
+                update tokens set current_total_supply = s.current_total_supply
+                    , token_price = s.token_price
+                from s
+                where s.token_id = tokens.token_id
+            ''')
+            res = con.execute(sql)
+
+            # update ergopad
+            sql = f'''
+                update tokens set vested = (
+                    select sum(a.amount)/power(10, max(k.decimals))
+                    from tokens_tokenomics_agg a
+                        join token_agg t on t.id  = a.agg_id
+                        join tokens k on k.token_id = a.token_id
+                    where t.notes = 'vested'
+                        and t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+                )    
+                where token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+            '''
+            res = con.execute(sql)
+
+            sql = f'''
+                update tokens set emitted = (
+                    select sum(a.amount)/power(10, max(k.decimals))
+                    from tokens_tokenomics_agg a
+                        join token_agg t on t.id  = a.agg_id
+                        join tokens k on k.token_id = a.token_id
+                    where t.notes = 'emitted'
+                        and t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+                )    
+                where token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+            '''
+            res = con.execute(sql)
+
+            sql = f'''
+                update tokens set staked = (
+                    select sum(a.amount)/power(10, max(k.decimals))
+                    from tokens_tokenomics_agg a
+                        join token_agg t on t.id  = a.agg_id
+                        join tokens k on k.token_id = a.token_id
+                    where t.notes = 'staked'
+                        and t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+                )    
+                where token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+            '''
+            res = con.execute(sql)
+
+            sql = f'''
+                update tokens set stake_pool = (
+                    select sum(a.amount)/power(10, max(k.decimals))
+                    from tokens_tokenomics_agg a
+                        join token_agg t on t.id  = a.agg_id
+                        join tokens k on k.token_id = a.token_id
+                    where t.notes = 'stake_pool'
+                        and t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+                )    
+                where token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+            '''
             res = con.execute(sql)
 
         sec = t.stop()

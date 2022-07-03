@@ -283,7 +283,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
 
     # process all new, unspent boxes
     for r in range(last_r-1, box_count, CHECKPOINT_INTERVAL):
-        next_r = r+CHECKPOINT_INTERVAL-1
+        next_r = r+CHECKPOINT_INTERVAL
         if next_r > box_count:
             next_r = box_count
 
