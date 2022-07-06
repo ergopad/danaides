@@ -3,12 +3,11 @@ import os, sys, time, signal
 import pandas as pd
 import argparse
 
-from requests import get
 from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, headers, NODE_URL, NODE_APIKEY
-from utils.aioreq import get_json, get_json_ordered
-from plugins import staking, tokenomics
+from utils.aioreq import get_json_ordered
+from plugins import staking, tokenomics, utxo
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -18,8 +17,8 @@ class dotdict(dict):
 
 PLUGINS = dotdict({
     'staking': True, 
-    'vesting': False, 
-    'tokenomics': True
+    'tokenomics': True,
+    'utxo': True,
 })
 
 parser = argparse.ArgumentParser()
@@ -212,20 +211,6 @@ async def process(args, t):
                     unspent = await del_inputs(tx['inputs'], unspent)
                     unspent = await add_outputs(tx['outputs'], unspent, blk)
 
-                    # TODO: optimize initial load and save certain boxes during
-                    # additional tasks; find keys boxes
-                    # for utxo in tx['outputs']:
-                    #     if utxo['ergoTree'] in TOKEN_AMOUNTS.keys():
-                    #         for asset in utxo['assets']:
-                    #             if asset['tokenId'] == TOKEN_AMOUNTS[utxo['ergoTree']]:
-                    #                 # found[utxo['ergoTree']] = asset['amount']
-                    #                 tokens.append(utxo['boxId'])
-                    #     
-                    #     # found ergopad
-                    #     if TOKEN_AMOUNTS['_ergopad'] in [a['tokenId'] for a in utxo['assets']]:
-                    #         ergopad.append(utxo['boxId'])
-
-
             # checkpoint
             if VERBOSE: logger.debug('Checkpointing...')
             last_height += FETCH_INTERVAL
@@ -281,14 +266,14 @@ class App:
         return res['current_height']
 
     # wait for new height
-    async def hibernate(self, last_block):
-        current_height = last_block
+    async def hibernate(self, last_height):
+        current_height = last_height
         infinity_counter = 0
         t = Timer()
         t.start()
 
         logger.info('Waiting for next block...')
-        while last_block == current_height:
+        while last_height == current_height:
             inf = get_node_info()
             current_height = inf['fullHeight']
 
@@ -313,8 +298,8 @@ if __name__ == '__main__':
     while not app.shutdown:
         try:
             # process unspent
-            last_block = asyncio.run(app.process_unspent(args))
-            args.height = -1 # figure out height next time around; don't use cli height
+            last_height = asyncio.run(app.process_unspent(args))
+            args.height = -1 # tell process to use audit_log
 
             ##
             ## PLUGINS
@@ -337,7 +322,7 @@ if __name__ == '__main__':
                     last_staking_block = res['height']
                 else:
                     logger.info('No staking info found; rebuiding from height 0...')
-                use_checkpoint = last_staking_block == last_block
+                use_checkpoint = last_staking_block == last_height
                 logger.debug('Sync main and staking plugin...')
                 asyncio.run(staking.process(last_staking_block, use_checkpoint=use_checkpoint, boxes_tablename=args.juxtapose))
 
@@ -346,13 +331,19 @@ if __name__ == '__main__':
                 logger.warning('PLUGIN: Tokenomics...')
                 asyncio.run(tokenomics.process(use_checkpoint=True))
 
+            # UTXOS
+            if PLUGINS.utxo:
+                logger.warning('PLUGIN: Utxo...')
+                # call last_height-1 as node info returns currently in progress block height, and plugin needs to process the previous block
+                asyncio.run(utxo.process(last_height=last_height-1, use_checkpoint=True, boxes_tablename=args.juxtapose))
+
             # quit or wait for next block
             if args.once:
                 app.stop()
                 try: sys.exit(0)
                 except SystemExit: os._exit(0)            
             else:
-                asyncio.run(app.hibernate(last_block))
+                asyncio.run(app.hibernate(last_height))
 
         except KeyboardInterrupt:
             logger.debug('Interrupted.')

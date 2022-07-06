@@ -308,7 +308,7 @@ async def process(use_checkpoint = False):
                         # emitted, vested, staked, blah blah...
                         if address in TOKEN_AGGS:
                             # logger.warning(f'''Agg address found {box_id}                    ''')
-                            for asset in assets:
+                            for asset in assets: # TODO: potential to overwrite box values if multiple assets found
                                 if TOKEN_AGGS[address]['token_id'] == asset['tokenId']:
                                     logger.warning(f'''Agg token in box {box_id}                    ''')
                                     aggs[box_id] = {

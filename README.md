@@ -155,6 +155,122 @@ values (
     2000000000000
 );
 
+-- dtop table utxos
+create table utxos (
+	id serial not null primary key,
+	box_id varchar(64) not null unique,
+	ergo_tree text,
+	address varchar(64) not null,
+	nergs bigint default 0, -- nergs
+	registers hstore,
+	assets hstore,
+	transaction_id varchar(64),
+	creation_height int,
+	height int not null
+);
+create unique index on utxos (box_id);
+# utxos
+-- truncate table utxos
+insert into utxos (box_id, ergo_tree, address, nergs, registers, assets, transaction_id, creation_height, height)
+    select 
+        c.box_id::varchar(64)
+        , c.ergo_tree::text
+        , c.address::varchar(64)
+        , c.nergs::bigint
+        , trim(both '"' from c.registers)::hstore as registers
+        , trim(both '"' from c.assets)::hstore as assets
+        , trim(both '"' from c.transaction_id)::varchar(64) as transaction_id
+        , c.creation_height::int
+        , c.height::int
+    from checkpoint_utxos c
+        
+# assets and balances (derived from utxos)
+-- assets
+-- drop table assets
+create table assets (
+	id serial not null primary key,
+	address varchar(64),
+	token_id varchar(64),
+	amount bigint
+);
+create unique index on assets (address, token_id);
+-- truncate table assets
+-- insert into assets (address, token_id, amount)
+with a as (
+	select 
+		address
+		, (each(assets)).key::varchar(64) as token_id
+		, (each(assets)).value::bigint as amount
+	from utxos
+	where address != '' -- only wallets; no smart contracts
+)
+-- truncate table assets
+insert into assets (address, token_id, amount)
+	select 
+		address
+		, token_id
+		, sum(amount) as amount
+	from a 
+	group by address, token_id;
+	
+	
+-- balances 
+-- drop table balances
+create table balances (
+	id serial not null primary key,
+	address varchar(64),
+	nergs bigint
+);
+create unique index on balances (address);
+-- truncate table balances
+insert into balances (address, nergs)
+	select address, sum(nergs) as nergs 
+	from utxos
+	where address != '' -- only wallets; no smart contracts
+	group by address;
+
+-- vesting
+create table vesting (
+	id serial not null primary key,
+	address varchar(64),
+	token_id varchar(64),
+	parameter varchar(1024),
+	ergo_tree text,
+	amount bigint
+);
+create unique index on vesting (address, token_id);
+
+with v as (
+	select id 
+		, ergo_tree
+		, box_id
+		, (each(registers)).key::varchar(64) as register
+		, right((each(registers)).value::text, length((each(registers)).value::text)-4) as token_id
+		, (each(registers)).value::text as parameter
+	from utxos
+	where ergo_tree in (
+			'100e04020400040404000402040604000402040204000400040404000400d810d601b2a4730000d602e4c6a7050ed603b2db6308a7730100d6048c720302d605e4c6a70411d6069d99db6903db6503feb27205730200b27205730300d607b27205730400d608b27205730500d6099972087204d60a9592720672079972087209999d9c7206720872077209d60b937204720ad60c95720bb2a5730600b2a5730700d60ddb6308720cd60eb2720d730800d60f8c720301d610b2a5730900d1eded96830201aedb63087201d901114d0e938c721101720293c5b2a4730a00c5a79683050193c2720cc2720193b1720d730b938cb2720d730c00017202938c720e01720f938c720e02720aec720bd801d611b2db63087210730d009683060193c17210c1a793c27210c2a7938c721101720f938c721102997204720a93e4c67210050e720293e4c6721004117205',
+			'1012040204000404040004020406040c0408040a050004000402040204000400040404000400d812d601b2a4730000d602e4c6a7050ed603b2db6308a7730100d6048c720302d605db6903db6503fed606e4c6a70411d6079d997205b27206730200b27206730300d608b27206730400d609b27206730500d60a9972097204d60b95917205b272067306009d9c7209b27206730700b272067308007309d60c959272077208997209720a999a9d9c7207997209720b7208720b720ad60d937204720cd60e95720db2a5730a00b2a5730b00d60fdb6308720ed610b2720f730c00d6118c720301d612b2a5730d00d1eded96830201aedb63087201d901134d0e938c721301720293c5b2a4730e00c5a79683050193c2720ec2720193b1720f730f938cb2720f731000017202938c7210017211938c721002720cec720dd801d613b2db630872127311009683060193c17212c1a793c27212c2a7938c7213017211938c721302997204720c93e4c67212050e720293e4c6721204117206'
+		)
+)
+, amounts as (
+	select id, box_id, parameter, ergo_tree
+	from v
+	where register = 'R4'
+)
+, tokens as (
+	select id, box_id, token_id
+	from v
+	where register = 'R5'
+)
+insert into vesting (address, token_id, parameter, ergo_tree, amount)
+	select a.address, t.token_id, q.parameter, q.ergo_tree, a.amount
+	from tokens t
+		join amounts q on q.id = t.id
+		join assets a on a.token_id = t.token_id
+	-- where address in ('9eXGhU2T4SatNVHrPNt5KRExeQ9Jz89aamvx2Q7CHjHbnY1sRzG')
+
+
 # store config for special keys
 create table token_agg (
     id serial not null primary key,
