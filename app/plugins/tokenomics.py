@@ -6,7 +6,7 @@ import json
 from time import sleep 
 # from sqlalchemy import create_engine, text
 from utils.logger import logger, Timer, printProgressBar, LEIF
-from utils.db import eng, text
+from utils.db import eng, text, engErgopad
 from utils.ergo import get_node_info, headers, NODE_APIKEY, NODE_URL, ERGOPAD_API
 from utils.aioreq import get_json, get_json_ordered
 from ergo_python_appkit.appkit import ErgoValue
@@ -72,6 +72,22 @@ async def checkpoint(found, found_aggs):
     with eng.begin() as con:
         con.execute(sql)
 
+async def get_token_price(token_id):
+    try:
+        sql = f'''
+            select sigusd/ergopad as price
+            from "ergodex_ERG/ergodexToken_continuous_5m"
+            where ergopad > 0
+            order by timestamp_utc desc
+        '''
+        with engErgopad.begin() as con:
+            res = con.execute(sql).fetchone()
+        return res['price']
+
+    except Exception as e:
+        logger.error(e)
+        return -1
+
 async def get_ergo_price():    
     try:
         res = get(ERGUSD_ORACLE_API)
@@ -110,7 +126,7 @@ async def process(use_checkpoint = False):
         # Find proper height
         if last_height == -1 or use_checkpoint:
             sql = text(f'''
-                select max(height) as height
+                select coalesce(max(height), 0) as height
                 from tokens_tokenomics
             ''')
             with eng.begin() as con:
@@ -223,37 +239,29 @@ async def process(use_checkpoint = False):
             res = con.execute(sql).fetchall()
         for r in res:
             token_name = r['token_name']
-            price = -1 # await get_token_price(token_name)
-            in_circulation = -1 # await get_in_circulation(token_name)
+            price = -1
+            if token_name == 'ergopad':
+                if VERBOSE: logger.debug('get ergopad price..')
+                price = await get_token_price(token_name)
+                if VERBOSE: logger.debug(f'::{price}')
+
             TOKENS[r['token_id']] = {
                 'token_name': token_name,
                 'decimals': r['decimals'],
                 'price': price,
-                'in_circulation': in_circulation,
                 'amount': 0
             }
             
             # don't update if API bonked; keep existing value
             if price != -1:
-                sql = text(f'''
-                    update tokens 
-                    set token_price = :token_price
-                        , in_circulation = :in_circulation
-                    where token_name = :token_name
-                ''')
                 with eng.begin() as con:
-                    con.execute(sql, {'token_price': price, 'token_name': token_name, 'in_circulation': in_circulation})
+                    sql = text(f'''
+                        update tokens 
+                        set token_price = :token_price
+                        where token_name = :token_name
+                    ''')
+                    con.execute(sql, {'token_name': token_name, 'token_price': price})
 
-            # don't update if API bonked; keep existing value
-            if in_circulation != -1:
-                sql = text(f'''
-                    update tokens 
-                    set token_price = :token_price
-                        , in_circulation = :in_circulation
-                    where token_name = :token_name
-                ''')
-                with eng.begin() as con:
-                    con.execute(sql, {'token_price': price, 'token_name': token_name, 'in_circulation': in_circulation})
         if VERBOSE: logger.info(TOKENS)
 
         max_height = 0
@@ -300,7 +308,7 @@ async def process(use_checkpoint = False):
                         # emitted, vested, staked, blah blah...
                         if address in TOKEN_AGGS:
                             # logger.warning(f'''Agg address found {box_id}                    ''')
-                            for asset in assets:
+                            for asset in assets: # TODO: potential to overwrite box values if multiple assets found
                                 if TOKEN_AGGS[address]['token_id'] == asset['tokenId']:
                                     logger.warning(f'''Agg token in box {box_id}                    ''')
                                     aggs[box_id] = {
@@ -339,31 +347,6 @@ async def process(use_checkpoint = False):
 
         logger.debug('Final tokenomics step...')
         with eng.begin() as con:
-            sql = text(f'''
-                with s as (
-                    select
-                        sum(k.amount) as current_total_supply
-                        , t.token_price
-                        , k.token_id::text
-                    -- select sum(amount)
-                    from tokens_tokenomics k
-                        left join tokens t on t.token_id = k.token_id
-                    group by k.token_id
-                        , t.token_price
-                ), agg as (
-                    select token_id, sum(coalesce(amount, 0.0)) as agg_amount
-                    from token_agg
-                    group by token_id
-                )
-                update tokens set current_total_supply = s.current_total_supply
-                    , token_price = s.token_price
-                    , in_circulation = s.current_total_supply - a.agg_amount
-                from s
-                    left join agg a on a.token_id = s.token_id
-                where s.token_id = tokens.token_id
-            ''')
-            res = con.execute(sql)
-
             # update ergopad
             sql = f'''
                 update tokens set vested = (
@@ -417,6 +400,21 @@ async def process(use_checkpoint = False):
             '''
             res = con.execute(sql)
 
+            # update in_circulation
+            sql = text(f'''
+                with s as (
+                    select sum(amount) as current_total_supply
+                        , token_id::text
+                    from tokens_tokenomics
+                    group by token_id
+                )
+                update tokens set current_total_supply = s.current_total_supply
+                    , in_circulation = s.current_total_supply/power(10, t.decimals) - tokens.vested - tokens.emitted - tokens.stake_pool
+                from s
+                    join tokens t on t.token_id = s.token_id
+				where s.token_id = tokens.token_id
+            ''')
+            res = con.execute(sql)
         sec = t.stop()
         logger.debug(f'Tokenomics complete: {sec:0.4f}s...                ')
 
