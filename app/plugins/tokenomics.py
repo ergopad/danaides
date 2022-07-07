@@ -240,7 +240,7 @@ async def process(use_checkpoint = False):
         for r in res:
             token_name = r['token_name']
             price = -1
-            if token_name == 'ergopad':
+            if token_name.lower() == 'ergopad':
                 if VERBOSE: logger.debug('get ergopad price..')
                 price = await get_token_price(token_name)
                 if VERBOSE: logger.debug(f'::{price}')
