@@ -43,6 +43,7 @@
 # only need to check heights from unspent (boxes table)
 ```
 ### stake_holders
+```sql
 . id
 . address
 . config_id (-> stake_config)
@@ -122,7 +123,7 @@ create table tokens (
 insert into tokens (id, token_name, token_id, stake_token_id, stake_ergotree, decimals, token_type, emission_amount)
 values (
     1,
-    'ergopad',
+    'ErgoPad',
     'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413', -- token_id
     '1028de73d018f0c9a374b71555c5b8f1390994f2f41633e7b9d68f77735782ee', -- stake_token_id
     '1017040004000e200549ea3374a36b7a22a803766af732e61798463c3332c5f6d86c8ab9195eed59040204000400040204020400040005020402040204060400040204040e2005cde13424a7972fbcd0b43fccbb5e501b1f75302175178fc86d8f243f3f312504020402010001010100d802d601b2a4730000d6028cb2db6308720173010001959372027302d80bd603b2a5dc0c1aa402a7730300d604e4c672030411d605e4c6a70411d606db63087203d607b27206730400d608db6308a7d609b27208730500d60ab27206730600d60bb27208730700d60c8c720b02d60de4c672010411d19683090193c17203c1a793c27203c2a793b272047308009ab27205730900730a93e4c67203050ee4c6a7050e93b27204730b00b27205730c00938c7207018c720901938c7207028c720902938c720a018c720b01938c720a029a720c9d9cb2720d730d00720cb2720d730e00d801d603b2a4730f009593c57203c5a7d801d604b2a5731000d1ed93720273119593c27204c2a7d801d605c67204050e95e67205ed93e47205e4c6a7050e938cb2db6308b2a573120073130001e4c67203050e73147315d17316',
@@ -134,7 +135,7 @@ values (
 insert into tokens (id, token_name, token_id, stake_token_id, stake_ergotree, decimals, token_type, emission_amount)
 values (
     2,
-    'paideia',
+    'Paideia',
     '1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489', -- token_id
     '245957934c20285ada547aa8f2c8e6f7637be86a1985b3e4c36e4e1ad8ce97ab', -- stake_token_id
     '101f040004000e2012bbef36eaa5e61b64d519196a1e8ebea360f18aba9b02d2a21b16f26208960f040204000400040001000e20b682ad9e8c56c5a0ba7fe2d3d9b2fbd40af989e8870628f4a03ae1022d36f0910402040004000402040204000400050204020402040604000100040404020402010001010100040201000100d807d601b2a4730000d6028cb2db6308720173010001d6039372027302d604e4c6a70411d605e4c6a7050ed60695ef7203ed93c5b2a4730300c5a78fb2e4c6b2a57304000411730500b2e4c6720104117306007307d6079372027308d1ecec957203d80ad608b2a5dc0c1aa402a7730900d609e4c672080411d60adb63087208d60bb2720a730a00d60cdb6308a7d60db2720c730b00d60eb2720a730c00d60fb2720c730d00d6107e8c720f0206d611e4c6720104119683090193c17208c1a793c27208c2a793b27209730e009ab27204730f00731093e4c67208050e720593b27209731100b27204731200938c720b018c720d01938c720b028c720d02938c720e018c720f01937e8c720e02069a72109d9c7eb272117313000672107eb27211731400067315957206d801d608b2a5731600ed72079593c27208c2a7d801d609c67208050e95e67209ed93e472097205938cb2db6308b2a57317007318000172057319731a731b9595efec7206720393c5b2a4731c00c5a7731d7207731e',
@@ -146,7 +147,7 @@ values (
 insert into tokens (id, token_name, token_id, stake_token_id, stake_ergotree, decimals, token_type, emission_amount)
 values (
     3,
-    'egio',
+    'EGIO',
     '00b1e236b60b95c2c6f8007a9d89bc460fc9e78f98b09faec9449007b40bccf3', -- token_id
     '1431964fa6559e969a7bf047405d3f63f7592354d432556f79894a12c4286e81', -- stake_token_id
     '1017040004000e20a8d633dee705ff90e3181013381455353dac2d91366952209ac6b3f9cdcc23e9040204000400040204020400040005020402040204060400040204040e20f419099a27aaa5f6f7d109d8773b1862e8d1857b44aa7d86395940d41eb5380604020402010001010100d802d601b2a4730000d6028cb2db6308720173010001959372027302d80bd603b2a5dc0c1aa402a7730300d604e4c672030411d605e4c6a70411d606db63087203d607b27206730400d608db6308a7d609b27208730500d60ab27206730600d60bb27208730700d60c8c720b02d60de4c672010411d19683090193c17203c1a793c27203c2a793b272047308009ab27205730900730a93e4c67203050ee4c6a7050e93b27204730b00b27205730c00938c7207018c720901938c7207028c720902938c720a018c720b01938c720a029a720c9d9cb2720d730d00720cb2720d730e00d801d603b2a4730f009593c57203c5a7d801d604b2a5731000d1ed93720273119593c27204c2a7d801d605c67204050e95e67205ed93e47205e4c6a7050e938cb2db6308b2a573120073130001e4c67203050e73147315d17316',
@@ -155,7 +156,33 @@ values (
     2000000000000
 );
 
--- dtop table utxos
+insert into tokens (id, token_name, token_id, stake_token_id, stake_ergotree, decimals, token_type, emission_amount)
+values (
+    4,
+    'EXLE',
+    '007fd64d1ee54d78dd269c8930a38286caa28d3f29d27cadcb796418ab15c283', -- token_id
+    null, -- stake_token_id
+    '100e04020400040404000402040604000402040204000400040404000400d810d601b2a4730000d602e4c6a7050ed603b2db6308a7730100d6048c720302d605e4c6a70411d6069d99db6903db6503feb27205730200b27205730300d607b27205730400d608b27205730500d6099972087204d60a9592720672079972087209999d9c7206720872077209d60b937204720ad60c95720bb2a5730600b2a5730700d60ddb6308720cd60eb2720d730800d60f8c720301d610b2a5730900d1eded96830201aedb63087201d901114d0e938c721101720293c5b2a4730a00c5a79683050193c2720cc2720193b1720d730b938cb2720d730c00017202938c720e01720f938c720e02720aec720bd801d611b2db63087210730d009683060193c17210c1a793c27210c2a7938c721101720f938c721102997204720a93e4c67210050e720293e4c6721004117205', -- vesting ergo tree
+    4,
+    'EIP-004',
+    750000000000
+);
+
+insert into tokens (id, token_name, token_id, stake_token_id, stake_ergotree, decimals, token_type, emission_amount)
+values (
+    5,
+    'Terahertz',
+    '02f31739e2e4937bb9afb552943753d1e3e9cdd1a5e5661949cb0cef93f907ea', -- token_id
+    null, -- stake_token_id
+    '100e04020400040404000402040604000402040204000400040404000400d810d601b2a4730000d602e4c6a7050ed603b2db6308a7730100d6048c720302d605e4c6a70411d6069d99db6903db6503feb27205730200b27205730300d607b27205730400d608b27205730500d6099972087204d60a9592720672079972087209999d9c7206720872077209d60b937204720ad60c95720bb2a5730600b2a5730700d60ddb6308720cd60eb2720d730800d60f8c720301d610b2a5730900d1eded96830201aedb63087201d901114d0e938c721101720293c5b2a4730a00c5a79683050193c2720cc2720193b1720d730b938cb2720d730c00017202938c720e01720f938c720e02720aec720bd801d611b2db63087210730d009683060193c17210c1a793c27210c2a7938c721101720f938c721102997204720a93e4c67210050e720293e4c6721004117205', -- vesting ergo tree
+    4,
+    'EIP-004',
+    400000000000
+);
+
+create extension hstore;
+
+-- drop table utxos
 create table utxos (
 	id serial not null primary key,
 	box_id varchar(64) not null unique,
@@ -169,8 +196,10 @@ create table utxos (
 	height int not null
 );
 create unique index on utxos (box_id);
+```
+
 # utxos
--- truncate table utxos
+```sql-- truncate table utxos
 insert into utxos (box_id, ergo_tree, address, nergs, registers, assets, transaction_id, creation_height, height)
     select 
         c.box_id::varchar(64)
@@ -183,8 +212,10 @@ insert into utxos (box_id, ergo_tree, address, nergs, registers, assets, transac
         , c.creation_height::int
         , c.height::int
     from checkpoint_utxos c
-        
+```
+
 # assets and balances (derived from utxos)
+```sql
 -- assets
 -- drop table assets
 create table assets (
@@ -230,13 +261,17 @@ insert into balances (address, nergs)
 	group by address;
 
 -- vesting
+-- box_id, vesting_key_id, parameters, token_id, remaining, address, ergo_tree
+-- drop table vesting
 create table vesting (
 	id serial not null primary key,
-	address varchar(64),
+	box_id varchar(64),
+	vesting_key_id varchar(64),
+    parameters varchar(1024),
 	token_id varchar(64),
-	parameter varchar(1024),
+    remaining bigint, -- nergs
+	address varchar(64),
 	ergo_tree text,
-	amount bigint
 );
 create unique index on vesting (address, token_id);
 
@@ -269,9 +304,10 @@ insert into vesting (address, token_id, parameter, ergo_tree, amount)
 		join amounts q on q.id = t.id
 		join assets a on a.token_id = t.token_id
 	-- where address in ('9eXGhU2T4SatNVHrPNt5KRExeQ9Jz89aamvx2Q7CHjHbnY1sRzG')
-
+```
 
 # store config for special keys
+```sql
 create table token_agg (
     id serial not null primary key,
     ergo_tree text,
@@ -323,9 +359,10 @@ values (
     '1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489',
     0.0,
     'vested'
-);
+);```
 
 # tokens_tokenomics
+```sql
 create table tokens_tokenomics
 (
     id serial not null primary key,
@@ -337,8 +374,10 @@ create table tokens_tokenomics
 );
 alter table tokens_tokenomics add unique (box_id, token_id);
 create index tokens_tokenomics_boxid on tokens_tokenomics (box_id);
+```
 
 # store token_agg values from blockchain
+```sql
 create table tokens_tokenomics_agg (
     id serial not null primary key, 
     agg_id int, 
@@ -347,6 +386,7 @@ create table tokens_tokenomics_agg (
     box_id varchar(64),
     height int
 )
+```
 
 ## PIT Tables
 Create point-in-time tables to save reprocess time.  This is currently manual, but could be integrated pretty easily.
@@ -377,3 +417,12 @@ insert into boxes
 -- make sure the processor can figure this out
 insert into audit_log (height, service) values (654321, 'boxes')
 ```
+
+# tokens
+example: https://explorer.ergoplatform.com/en/transactions/08eaa2e5873a2b2edf29018d0f10577e08e737e7cae5496515b8938d350fe50e
+when input boxId = output asset.token_id
+- R4 = 
+- R5 = 
+- R6 = 
+- R7 = 
+- R8 = 

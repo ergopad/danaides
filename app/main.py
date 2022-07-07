@@ -272,6 +272,20 @@ class App:
         t = Timer()
         t.start()
 
+        # admin overview
+        sql = f'''
+                  select count(*) as i, 0 as j, 'assets' as tbl from assets
+            union select count(*), 0, 'tokenomics' from tokens_tokenomics
+            union select count(*), max(height), 'staking' from addresses_staking
+            union select count(*), 0, 'vesting' from vesting
+			union select count(*), max(height), 'utxos' from utxos
+            union select count(*), max(height), 'boxes' from boxes
+        '''
+        with eng.begin() as con:
+            res = con.execute(sql) 
+        logger.warning('\n'.join([f'''{r['tbl']}: {r['i']} rows, {r['j']} max height''' for r in res]))
+
+        # chill for next block
         logger.info('Waiting for next block...')
         while last_height == current_height:
             inf = get_node_info()
@@ -282,6 +296,17 @@ class App:
                 infinity_counter += 1
 
             time.sleep(1)
+
+        # cleanup audit log
+        logger.debug('Cleanup audit log...')
+        sql = f'''
+            delete 
+            -- select *
+            from audit_log 
+            where created_at < now() - interval '3 days';            
+        '''
+        with eng.begin() as con:
+            con.execute(sql)
 
         sec = t.stop()
         logger.log(LEIF, f'Block took {sec:0.4f}s...')        
