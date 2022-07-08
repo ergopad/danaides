@@ -416,13 +416,38 @@ insert into boxes
 
 -- make sure the processor can figure this out
 insert into audit_log (height, service) values (654321, 'boxes')
+
+create table prices(
+	id serial not null primary key,
+	token_id varchar(64) not null,
+	price decimal(10, 10) default 0.0
+)
+
 ```
 
 # tokens
 example: https://explorer.ergoplatform.com/en/transactions/08eaa2e5873a2b2edf29018d0f10577e08e737e7cae5496515b8938d350fe50e
 when input boxId = output asset.token_id
-- R4 = 
-- R5 = 
-- R6 = 
-- R7 = 
-- R8 = 
+- R4 = name 
+- R5 = desc
+- R6 = decimals
+- R7 = type?? # 0101 - EIP-004?
+- R8 = ??
+use to find register values above: 
+''.join([chr(r) for r in ErgoAppKit.deserializeLongArray('0e114572676f204e4654205475746f7269616c')]) # 'Ergo NFT Tutorial'
+# TODO: 
+invalid asset, {'tokenId': 'e86c662e2f508d3be8068738f307276db6dcf0054c10fe2a083c8da9e5db87c7', 'amount': 2000} at height 265850 while fetching tokens int() argument must be a string, a bytes-like object or a real number, not 'sigmastate.eval.CGroupElement'
+
+## issue found between these tokens
+token found: Charles Hoskinson 3D foto/0/8b0305aaea56cfb17cc4894c4ba5c150465a7f794ab5ac6e4ad0d3e03cd4060f/1
+DEBUG:2022-07-08 13:32:25,077:ergopad:token found: Ergo anim/0/54b2264e33c91176d166141bb13d7dcde4f1dfa5d4c8cb39939991f6daebf110/1
+ERROR:2022-07-08 13:32:25,131:ergopad:ERR: checkpointing tokens (psycopg2.errors.NumericValueOutOfRange) integer out of range
+
+[SQL:
+                insert into tokens_alt (token_id, height, amount, token_name, decimals)
+                    select c.token_id, c.height, c.amount, c.token_name, c.decimals
+                    from checkpoint_tokens_alt c
+                    ;
+            ]
+(Background on this error at: https://sqlalche.me/e/14/9h9h)
+DEBUG:2022-07-08 13:32:27,519:ergopad:token found: Female #03/0/5a7120a44aad2cd73f4d3a4819e1442c4c95a30876ef088be415285ae46c0bf6/1
