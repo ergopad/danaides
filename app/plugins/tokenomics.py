@@ -72,22 +72,6 @@ async def checkpoint(found, found_aggs):
     with eng.begin() as con:
         con.execute(sql)
 
-async def get_token_price(token_id):
-    try:
-        sql = f'''
-            select sigusd/ergopad as price
-            from "ergodex_ERG/ergodexToken_continuous_5m"
-            where ergopad > 0
-            order by timestamp_utc desc
-        '''
-        with engErgopad.begin() as con:
-            res = con.execute(sql).fetchone()
-        return res['price']
-
-    except Exception as e:
-        logger.error(e)
-        return -1
-
 async def get_ergo_price():    
     try:
         res = get(ERGUSD_ORACLE_API)
@@ -232,36 +216,19 @@ async def process(use_checkpoint = False):
         # TOKENS
         logger.debug('Gather tokens...')
         sql = f'''
-            select token_id, token_name, decimals
+            select token_id, token_name, decimals, token_price
             from tokens
         '''
         with eng.begin() as con:
             res = con.execute(sql).fetchall()
         for r in res:
             token_name = r['token_name']
-            price = -1
-            if token_name.lower() == 'ergopad':
-                if VERBOSE: logger.debug('get ergopad price..')
-                price = await get_token_price(token_name)
-                if VERBOSE: logger.debug(f'::{price}')
-
             TOKENS[r['token_id']] = {
                 'token_name': token_name,
                 'decimals': r['decimals'],
-                'price': price,
+                'price': r['token_price'],
                 'amount': 0
-            }
-            
-            # don't update if API bonked; keep existing value
-            if price != -1:
-                with eng.begin() as con:
-                    sql = text(f'''
-                        update tokens 
-                        set token_price = :token_price
-                        where token_name = :token_name
-                    ''')
-                    con.execute(sql, {'token_name': token_name, 'token_price': price})
-
+            }            
         if VERBOSE: logger.info(TOKENS)
 
         max_height = 0
