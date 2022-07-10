@@ -116,7 +116,7 @@ create table tokens (
     stake_ergotree varchar(2000),
     current_total_supply bigint,
     in_circulation bigint,
-    token_price numeric(10, 2)
+    token_price numeric(20, 10)
 );
 
 -- use /utils/addressToRaw/{address} on the smart contract to get stake_ergotree
@@ -359,7 +359,11 @@ values (
     '1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489',
     0.0,
     'vested'
-);```
+);
+
+-- do this, or just don't manually assign values in above inserts
+alter sequence tokens_id_seq restart with 6;
+```
 
 # tokens_tokenomics
 ```sql
@@ -420,7 +424,7 @@ insert into audit_log (height, service) values (654321, 'boxes')
 create table prices(
 	id serial not null primary key,
 	token_id varchar(64) not null,
-	price decimal(10, 10) default 0.0
+	price decimal(20, 10) default 0.0
 )
 
 ```
