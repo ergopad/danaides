@@ -174,33 +174,6 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
     if use_checkpoint:
         logger.debug('Using checkpoint')
 
-        # remove spent boxes from staking tables
-        # logger.info('Remove spent boxes using checkpoint tables...')
-        # addresses
-        # sql = f'''
-        #     -- remove spent boxes from addresses_staking from current boxes checkpoint
-        #     delete 
-        #     from addresses_staking 
-        #     where box_id in (
-        #         select box_id
-        #         from checkpoint_{boxes_tablename}
-        #         where is_unspent::boolean = false -- remove all; unspent will reprocess below??
-        #     )
-        # '''
-        # eng.execute(sql)
-
-        # sql = f'''
-        #     -- remove spent boxes from keys_staking from current boxes checkpoint
-        #     delete 
-        #     from keys_staking 
-        #     where box_id in (
-        #         select box_id
-        #         from checkpoint_{boxes_tablename}
-        #         where is_unspent::boolean = false -- remove all; unspent will reprocess below??
-        #     )
-        # '''
-        # eng.execute(sql)
-
         # find newly unspent boxes
         sql = f'''
             select box_id, height, row_number() over(partition by is_unspent order by height) as r 
@@ -238,39 +211,6 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
                     where last_height >= {last_height}
                 '''
                 con.execute(sql)
-
-        # # remove spent boxes from staking tables
-        # logger.info('Remove spent boxes from staking tables...')
-        # # addresses            
-        # sql = f'''
-        #     with spent as (
-        #         select a.box_id, a.height
-        #         from addresses_staking a
-        #             left join {boxes_tablename} b on a.box_id = b.box_id
-        #         where b.box_id is null
-        #     )
-        #     delete from addresses_staking t
-        #     using spent s
-        #     where s.box_id = t.box_id
-        #         and s.height = t.height
-        # '''
-        # if VERBOSE: logger.debug(sql)
-        # eng.execute(sql)
-
-        # sql = f'''
-        #     with spent as (
-        #         select a.box_id, a.height
-        #         from keys_staking a
-        #             left join {boxes_tablename} b on a.box_id = b.box_id
-        #         where b.box_id is null
-        #     )
-        #     delete from keys_staking t
-        #     using spent s
-        #     where s.box_id = t.box_id
-        #         and s.height = t.height
-        # '''
-        # if VERBOSE: logger.debug(sql)
-        # eng.execute(sql)
 
         '''
         to find unspent boxes to process
@@ -324,7 +264,17 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
             # .. these 2 heights should be the same, but not spent the time to validate.  May be able to simplify if these are always the same
             # from this loop, look for keys, addresses, assets, etc..
             # sometimes the node gets overwhelmed so using a retry counter (TODO: is there a better way?)
-            utxo = await get_json_ordered(urls, headers)
+            retries = 0
+            while retries < 5:
+                try:
+                    utxo = await get_json_ordered(urls, headers)
+                    retries = 5
+                except:
+                    retries += 1
+                    logger.warning(f'get ordered json retry: {retries}')
+                    pass
+
+            # utxos found, now look for keys/addresses/etc..
             for address, box_id, assets, registers, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[1]] for u in utxo if u[0] == 200]:
                 # find height for audit (and checkpoint?)
                 if height > max_height:
