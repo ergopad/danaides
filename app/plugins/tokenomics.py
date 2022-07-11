@@ -9,7 +9,7 @@ from utils.logger import logger, Timer, printProgressBar, LEIF
 from utils.db import eng, text, engErgopad
 from utils.ergo import get_node_info, headers, NODE_APIKEY, NODE_URL, ERGOPAD_API
 from utils.aioreq import get_json, get_json_ordered
-from ergo_python_appkit.appkit import ErgoValue
+from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 from requests import get
 
 parser = argparse.ArgumentParser()
@@ -277,7 +277,7 @@ async def process(use_checkpoint = False):
                             # logger.warning(f'''Agg address found {box_id}                    ''')
                             for asset in assets: # TODO: potential to overwrite box values if multiple assets found
                                 if TOKEN_AGGS[address]['token_id'] == asset['tokenId']:
-                                    logger.warning(f'''Agg token in box {box_id}                    ''')
+                                    if VERBOSE: logger.warning(f'''Agg token in box {box_id}                    ''')
                                     aggs[box_id] = {
                                         'agg_id': TOKEN_AGGS[address]['agg_id'],
                                         'address': address,

@@ -427,6 +427,17 @@ create table prices(
 	price decimal(20, 10) default 0.0
 )
 
+create table tokens_alt
+(
+    id serial not null primary key,
+    token_id varchar(64) NOT NULL,
+    decimals integer,
+    amount bigint,
+    token_name varchar(1024),
+    token_type varchar(64),
+    token_price numeric(10,10) DEFAULT 0.0,
+    height integer
+);
 ```
 
 # tokens

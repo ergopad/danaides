@@ -4,6 +4,7 @@ import argparse
 from utils.logger import logger, Timer, printProgressBar
 from utils.db import eng
 from utils.ergodex import getErgodexPoolBox, parseValidPools
+from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 #region INIT
 parser = argparse.ArgumentParser()

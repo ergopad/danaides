@@ -9,7 +9,7 @@ from utils.db import eng, text
 from utils.ergo import headers, NODE_URL
 from utils.aioreq import get_json_ordered
 from requests import get
-from ergo_python_appkit.appkit import ErgoValue
+from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 #region INIT
 parser = argparse.ArgumentParser()

@@ -12,7 +12,7 @@ from requests import get
 from os import getenv
 from base58 import b58encode
 from pydantic import BaseModel
-from ergo_python_appkit.appkit import ErgoValue
+from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
@@ -117,6 +117,7 @@ async def process(last_height, use_checkpoint = False, boxes_tablename:str = 'bo
     sql = '''
         select stake_ergotree, stake_token_id, token_name, token_id, token_type, emission_amount, decimals 
         from tokens
+        where stake_ergotree is not null
     '''
     STAKE_KEYS = {}
     res = eng.execute(sql).fetchall()

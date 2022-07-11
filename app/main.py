@@ -8,6 +8,7 @@ from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, headers, NODE_URL, NODE_APIKEY
 from utils.aioreq import get_json_ordered
 from plugins import staking, tokenomics, utxo, prices
+from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -107,7 +108,7 @@ async def find_tokens(transactions: dict, tokens: dict, height: int = -1) -> dic
                         except: pass
                         # some funky deserialization issues
                         if type(amount) == int:
-                            logger.debug(f'''token found: {token_name}/{decimals}/{token_id}/{amount}''')
+                            if VERBOSE: logger.debug(f'''token found: {token_name}/{decimals}/{token_id}/{amount}''')
                             new[token_id] = {
                                 'height': height,
                                 'token_name': token_name,

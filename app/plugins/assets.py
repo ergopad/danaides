@@ -47,7 +47,7 @@ async def checkpoint(assets):
             contents['address'].append(addr_converter[content['address']])
             contents['value'].append(content['value'])
             contents['assets'].append(json.dumps(content['assets']))
-            contents['registers'].append(json.dumps(content['assets']))
+            contents['registers'].append(json.dumps(content['registers']))
             contents['box_id'].append(box_id)
             contents['height'].append(content['height'])
         df_box_contents = pd.DataFrame().from_dict(contents)
