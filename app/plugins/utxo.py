@@ -311,7 +311,14 @@ async def process(last_height:int, use_checkpoint:bool=False, boxes_tablename:st
                     # find all the calls to build boxes
                     urls = [[box['height'], f'''{NODE_URL}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
                     if VERBOSE: logger.debug(f'slice: {r}:{next_r} / up to height: {boxes[next_r-1]["height"]}')
-                    utxo = await get_json_ordered(urls, headers)
+                    while retries < 5:
+                        try:
+                            utxo = await get_json_ordered(urls, headers)
+                            retries = 5
+                        except:
+                            retries += 1
+                            logger.warning(f'get ordered json retry: {retries}')
+                            pass
 
                     # fetch box info
                     for ergo_tree, box_id, box_assets, registers, nergs, creation_height, transaction_id, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[2]['value'], u[2]['creationHeight'], u[2]['transactionId'], u[1]] for u in utxo if u[0] == 200]:
