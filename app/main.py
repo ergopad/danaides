@@ -7,7 +7,8 @@ from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, headers, NODE_URL, NODE_APIKEY
 from utils.aioreq import get_json_ordered
-from plugins import staking, tokenomics, utxo, prices
+from plugins import staking, prices, assets, tokenomics, utxo
+from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -15,114 +16,107 @@ class dotdict(dict):
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
 
+PRETTYPRINT = False
+VERBOSE = False
+FETCH_INTERVAL = 1500
 PLUGINS = dotdict({
     'staking': True, 
     'tokenomics': True,
     'utxo': True,
     'prices': True,
 })
-
-parser = argparse.ArgumentParser()
-# parser.add_argument("-V", "--verbose", help="Wordy", action='store_true')
-parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
-parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
-parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
-parser.add_argument("-P", "--prettyprint", help="Progress bar vs. scrolling", action='store_true')
-parser.add_argument("-O", "--once", help="When complete, finish", action='store_true')
-args = parser.parse_args()
-
-PRETTYPRINT = args.prettyprint
-VERBOSE = False
-FETCH_INTERVAL = 1500
-
-sql = f'''
-    select ergo_tree, token_id
-    from token_agg
-'''
-logger.debug('Find config...')
-config = eng.execute(sql).fetchall()
-TOKEN_AMOUNTS = {}
-for cfg in config:
-    TOKEN_AMOUNTS[cfg['ergo_tree']] = cfg['token_id']
-
 headers = {'Content-Type': 'application/json', 'api_key': NODE_APIKEY}
 blips = []
 
 #region FUNCTIONS
 # remove all inputs from current block
 async def del_inputs(inputs: dict, unspent: dict, height: int = -1) -> dict:
-    new = unspent
-    for i in inputs:
-        box_id = i['boxId']
-        try:
-            # new[box_id] = height
-            new[box_id] = {
-                'height': height,
-                'nergs': 0
-            }
-        except Exception as e:
-            blips.append({'box_id': box_id, 'height': height, 'msg': f'cant remove'})
-            if VERBOSE: logger.warning(f'cant find {box_id} at height {height} while removing from unspent {e}')
-    return new
+    try:
+        new = unspent
+        for i in inputs:
+            box_id = i['boxId']
+            try:
+                # new[box_id] = height
+                new[box_id] = {
+                    'height': height,
+                    'nergs': 0
+                }
+            except Exception as e:
+                blips.append({'box_id': box_id, 'height': height, 'msg': f'cant remove'})
+                if VERBOSE: logger.warning(f'cant find {box_id} at height {height} while removing from unspent {e}')
+        return new
+
+    except Exception as e:
+        logger.error(f'ERR: find tokens {e}')
+        return {}
 
 # add all outputs from current block
 async def add_outputs(outputs: dict, unspent: dict, height: int = -1) -> dict:
-    new = unspent
-    for o in outputs:
-        box_id = o['boxId']
-        nergs = o['value']
-        # amount = o['value']
-        try:
-            # new[box_id] = height
-            new[box_id] = {
-                'height': height,
-                'nergs': nergs
-            }
-        except Exception as e:
-            blips.append({'box_id': box_id, 'height': height, 'msg': f'cant add'})
-            if VERBOSE: logger.warning(f'{box_id} exists at height {height} while adding to unspent {e}')
-    return new
+    try:
+        new = unspent
+        for o in outputs:
+            box_id = o['boxId']
+            nergs = o['value']
+            # amount = o['value']
+            try:
+                # new[box_id] = height
+                new[box_id] = {
+                    'height': height,
+                    'nergs': nergs
+                }
+            except Exception as e:
+                blips.append({'box_id': box_id, 'height': height, 'msg': f'cant add'})
+                if VERBOSE: logger.warning(f'{box_id} exists at height {height} while adding to unspent {e}')
+        return new
+
+    except Exception as e:
+        logger.error(f'ERR: add outputs {e}')
+        return {}
 
 async def find_tokens(transactions: dict, tokens: dict, height: int = -1) -> dict:
-    new = tokens
-    
-    # find all input box ids
-    for tx in transactions:
-        input_boxes = [i['boxId'] for i in tx['inputs']]
-        for o in tx['outputs']:
-            for a in o['assets']:
-                try:
-                    if a['tokenId'] in input_boxes:
-                        token_id = a['tokenId'] # this is also the box_id
-                        try: token_name = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R4'])])
-                        except: token_name = ''
-                        if 'R6' in o['additionalRegisters']:
-                            try: decimals = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R6'])])
-                            except: decimals = ErgoValue.fromHex(o['additionalRegisters']['R6']).getValue()
-                        else:
-                            decimals = 0
-                        try: decimals = int(decimals)
-                        except: decimals = 0
-                        try: amount = int(a['amount'])
-                        except: pass
-                        # some funky deserialization issues
-                        if type(amount) == int:
-                            logger.debug(f'''token found: {token_name}/{decimals}/{token_id}/{amount}''')
-                            new[token_id] = {
-                                'height': height,
-                                'token_name': token_name,
-                                'decimals': decimals,
-                                'amount': amount
-                            }
-                except Exception as e:
-                    blips.append({'asset': a, 'height': height, 'msg': f'invalid asset while looking for tokens'})
-                    logger.warning(f'invalid asset, {a} at height {height} while fetching tokens {e}')
-                    pass
+    try:
+        # find all input box ids
+        new = tokens
+        for tx in transactions:
+            input_boxes = [i['boxId'] for i in tx['inputs']]
+            for o in tx['outputs']:
+                for a in o['assets']:
+                    try:
+                        if a['tokenId'] in input_boxes:
+                            token_id = a['tokenId'] # this is also the box_id
+                            try: token_name = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R4'])])
+                            except: token_name = ''
+                            if 'R6' in o['additionalRegisters']:
+                                try: decimals = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R6'])])
+                                except: decimals = ErgoValue.fromHex(o['additionalRegisters']['R6']).getValue()
+                            else:
+                                decimals = 0
+                            try: decimals = int(decimals)
+                            except: decimals = 0
+                            try: amount = int(a['amount'])
+                            except: pass
+                            # some funky deserialization issues
+                            if type(amount) == int:
+                                logger.debug(f'''token found: {token_name}/{decimals}/{token_id}/{amount}''')
+                                new[token_id] = {
+                                    'height': height,
+                                    'token_name': token_name,
+                                    'decimals': decimals,
+                                    'amount': amount
+                                }
+                    except Exception as e:
+                        blips.append({'asset': a, 'height': height, 'msg': f'invalid asset while looking for tokens'})
+                        logger.warning(f'invalid asset, {a} at height {height} while fetching tokens {e}')
+                        pass
 
-    return new
+        return new
+
+    except Exception as e:
+        logger.error(f'ERR: find tokens {e}')
+        return {}
 
 # upsert current chunk
-async def checkpoint(height, unspent, tokens, boxes_tablename='boxes', tokens_tablename='boxes'):
+async def checkpoint(height, unspent, tokens, boxes_tablename='boxes', tokens_tablename='tokens_alt'):
     try:
         # unspent
         df = pd.DataFrame.from_dict({
@@ -171,38 +165,55 @@ async def checkpoint(height, unspent, tokens, boxes_tablename='boxes', tokens_ta
             con.execute(sql)
 
         # tokens
-        df = pd.DataFrame.from_dict({
-            'token_id': list(tokens.keys()), 
-            'height': [n['height'] for n in tokens.values()], 
-            'amount': [n['amount'] for n in tokens.values()],
-            'token_name': [n['token_name'] for n in tokens.values()],
-            'decimals': [n['decimals'] for n in tokens.values()], 
-        })
-        # logger.info(df)
-        df.to_sql(f'checkpoint_{tokens_tablename}', eng, if_exists='replace')
+        if tokens == {}:
+            if VERBOSE: logger.debug('No tokens this interavl...')
+        else:
+            df = pd.DataFrame.from_dict({
+                'token_id': list(tokens.keys()), 
+                'height': [n['height'] for n in tokens.values()], 
+                'amount': [n['amount'] for n in tokens.values()],
+                'token_name': [n['token_name'] for n in tokens.values()],
+                'decimals': [n['decimals'] for n in tokens.values()], 
+            })
+            # logger.info(df)
+            df.to_sql(f'checkpoint_{tokens_tablename}', eng, if_exists='replace')
 
-        # execute as transaction
-        with eng.begin() as con:
-            # add unspent
-            sql = f'''
-                insert into {tokens_tablename} (token_id, height, amount, token_name, decimals)
-                    select c.token_id, c.height, c.amount, c.token_name, c.decimals
-                    from checkpoint_{tokens_tablename} c
-                    ;
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)
+            # execute as transaction
+            with eng.begin() as con:
+                # add unspent
+                sql = f'''
+                    insert into {tokens_tablename} (token_id, height, amount, token_name, decimals)
+                        select c.token_id, c.height, c.amount, c.token_name, c.decimals
+                        from checkpoint_{tokens_tablename} c
+                        ;
+                '''
+                if VERBOSE: logger.debug(sql)
+                con.execute(sql)
 
-            sql = f'''
-                insert into audit_log (height, service)
-                values ({int(height)-1}, '{tokens_tablename}')
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)
+                sql = f'''
+                    insert into audit_log (height, service)
+                    values ({int(height)-1}, '{tokens_tablename}')
+                '''
+                if VERBOSE: logger.debug(sql)
+                con.execute(sql)
 
     except Exception as e:
         logger.error(f'ERR: checkpointing {e}')
         pass        
+
+async def get_all(urls, headers):
+    retries = 0
+    res = {}
+    while retries < 5:
+        try:
+            res = await get_json_ordered(urls, headers)
+            retries = 5
+        except:
+            retries += 1
+            logger.warning(f'retry: {retries}')
+            pass
+
+    return res
 
 ### MAIN
 async def process(args, t):
@@ -273,14 +284,14 @@ async def process(args, t):
             if PRETTYPRINT: printProgressBar(last_height, current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
             else: logger.info(suffix)
             urls = [[blk, f'{NODE_URL}/blocks/at/{blk}'] for blk in batch_order]
-            block_headers = await get_json_ordered(urls, headers)
+            block_headers = await get_all(urls, headers)
 
             # find transactions
             suffix = f'''Transactions: {last_height}/{next_height}..{current_height}             '''
             if PRETTYPRINT: printProgressBar(int(last_height+(FETCH_INTERVAL/3)), current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
             else: logger.info(suffix)
             urls = [[hdr[1], f'''{NODE_URL}/blocks/{hdr[2][0]}/transactions'''] for hdr in block_headers if hdr[1] != 0]
-            blocks = await get_json_ordered(urls, headers)
+            blocks = await get_all(urls, headers)
 
             # recreate blockchain (must put together in order)
             suffix = f'''Filter Unspent: {last_height}/{next_height}..{current_height}              '''
@@ -290,7 +301,10 @@ async def process(args, t):
                 for tx in transactions['transactions']:
                     unspent = await del_inputs(tx['inputs'], unspent)
                     unspent = await add_outputs(tx['outputs'], unspent, blk)
-                    tokens = await find_tokens(transactions['transactions'], tokens, blk)
+                    if args.ignoreplugins:
+                        tokens = {}
+                    else:
+                        tokens = await find_tokens(transactions['transactions'], tokens, blk)
 
             # checkpoint
             if VERBOSE: logger.debug('Checkpointing...')
@@ -395,13 +409,39 @@ class App:
 
 ### MAIN
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    # parser.add_argument("-V", "--verbose", help="Wordy", action='store_true')
+    parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
+    parser.add_argument("-B", "--override", help="Process this box", default='')
+    parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
+    parser.add_argument("-F", "--fetchinterval", help="Begin at this height", type=int, default=1500)
+    parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
+    parser.add_argument("-P", "--prettyprint", help="Progress bar vs. scrolling", action='store_true')
+    parser.add_argument("-O", "--once", help="When complete, finish", action='store_true')
+    parser.add_argument("-X", "--ignoreplugins", help="Only process boxes", action='store_true')
+    parser.add_argument("-V", "--verbose", help="Be wordy", action='store_true')
+    args = parser.parse_args()
+
+    if args.ignoreplugins:
+        logger.warning('Ignoring plugins...')
+        for p in PLUGINS: 
+            p=False
+
+    if args.juxtapose != 'boxes': logger.warning(f'Using alt boxes table: {args.juxtapose}...')
+    if args.height != -1: logger.warning(f'Starting at height: {args.height}...')
+    if args.prettyprint: logger.warning(f'Pretty print...')
+    if args.once: logger.warning(f'Processing once, then exit...')
+    if args.truncate: logger.warning(f'Truncating {args.juxtapose}...')
+    if args.verbose: logger.warning(f'Verbose...')
+    if args.fetchinterval != 1500: logger.warning(f'Fetch interval: {args.fetchinterval}...')
+
+    PRETTYPRINT = args.prettyprint
+    VERBOSE = args.verbose
+    FETCH_INTERVAL = args.fetchinterval
+    
     app = App()
     app.start()
     
-    # main loop
-    # args.juxtapose = 'jux' # testing
-    # args.once = True # testing
-    # logger.debug(args); exit(1)
     while not app.shutdown:
         try:
             # process unspent
@@ -411,6 +451,12 @@ if __name__ == '__main__':
             ##
             ## PLUGINS
             ##            
+
+            # UTXOS - process first
+            if PLUGINS.utxo:
+                logger.warning('PLUGIN: Utxo...')
+                # call last_height-1 as node info returns currently in progress block height, and plugin needs to process the previous block
+                asyncio.run(utxo.process(use_checkpoint=True, boxes_tablename=args.juxtapose, box_override=args.override))
 
             # PRICES
             if PLUGINS.prices:
@@ -443,12 +489,6 @@ if __name__ == '__main__':
                 logger.warning('PLUGIN: Tokenomics...')
                 asyncio.run(tokenomics.process(use_checkpoint=True))
 
-            # UTXOS
-            if PLUGINS.utxo:
-                logger.warning('PLUGIN: Utxo...')
-                # call last_height-1 as node info returns currently in progress block height, and plugin needs to process the previous block
-                asyncio.run(utxo.process(last_height=last_height-1, use_checkpoint=True, boxes_tablename=args.juxtapose))
-
             # quit or wait for next block
             if args.once:
                 app.stop()
@@ -470,3 +510,4 @@ if __name__ == '__main__':
     app.stop()
     try: sys.exit(0)
     except SystemExit: os._exit(0)            
+

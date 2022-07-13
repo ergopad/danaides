@@ -14,16 +14,8 @@ from base58 import b58encode
 from pydantic import BaseModel
 from ergo_python_appkit.appkit import ErgoValue
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
-parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
-parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
-parser.add_argument("-E", "--endat", help="End at this height", type=int, default=10**10)
-parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
-args = parser.parse_args()
-
 # ready, go
-PRETTYPRINT = args.prettyprint
+PRETTYPRINT = False
 VERBOSE = False
 NERGS2ERGS = 10**9
 UPDATE_INTERVAL = 100 # update progress display every X blocks
@@ -439,4 +431,14 @@ async def main(args):
         await hibernate(new_height)
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
+    parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
+    parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
+    parser.add_argument("-E", "--endat", help="End at this height", type=int, default=10**10)
+    parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
+    args = parser.parse_args()
+
+    PRETTYPRINT = args.prettyprint
+    
     res = asyncio.run(main(args))

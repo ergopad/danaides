@@ -12,16 +12,8 @@ from requests import get
 from ergo_python_appkit.appkit import ErgoValue
 
 #region INIT
-parser = argparse.ArgumentParser()
-parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
-parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
-parser.add_argument("-E", "--endat", help="End at this height", type=int, default=10**10)
-parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
-args = parser.parse_args()
-
-HEIGHT = args.height
-PRETTYPRINT = args.prettyprint
-VERBOSE = False # args.verbose
+PRETTYPRINT = False
+VERBOSE = False
 NERGS2ERGS = 10**9
 UPDATE_INTERVAL = 100 # update progress display every X blocks
 CHECKPOINT_INTERVAL = 5000 # save progress every X blocks
@@ -78,7 +70,7 @@ async def checkpoint(utxos):
         logger.debug(f'ERR: checkpoint {e}')
         pass
 
-async def prepare_destination(boxes_tablename:str, last_height:int) -> int:
+async def prepare_destination(boxes_tablename:str):
     logger.info('Remove spent boxes from utxos tables...')
 
     try:    
@@ -99,69 +91,26 @@ async def prepare_destination(boxes_tablename:str, last_height:int) -> int:
             if VERBOSE: logger.debug(sql)
             con.execute(sql)
 
-            # cleanup utxos above requested height
-            if last_height < 100000:
-                logger.warning(f'ALL UTXO blocks above {last_height} will be DELETED...? (in 10s)')
-                sleep(10)
-            logger.warning(f'Removing UTXO blocks above {last_height-1}...')
-            sql = text(f'''delete from utxos where height >= {last_height}''')
-            con.execute(sql)
-
-        return last_height
-
     except Exception as e:
         logger.error(f'ERR: Preparing utxo table {e}')
         pass
     
-async def get_all_unspent_boxes(boxes_tablename:str, box_override:str, last_height:int):
+async def get_all_unspent_boxes(boxes_tablename:str, box_override:str):
     # determine next height to start at
-    logger.info('Finding boxes...')
-    
     try:
-        sql = f'''
-            select height 
-            from audit_log 
-            where service = 'utxo'
-            order by created_at desc 
-        '''
-        with eng.begin() as con:
-            res = con.execute(sql).fetchone()
-
-        # determine proper height to start at
-        if last_height >= 0:
-            logger.info(f'Starting at height: {last_height}...')
-
-        else:            
-            # find proper height
-            if (res is None) or (last_height == 0):
-                # no audit height, or height=0 was passed on CLI
-                last_height = 0
-                logger.warning(f'Starting at genesis in 10s...')
-                try: 
-                    sleep(10) # allow override
-                except KeyError as e:
-                    logger.error(f'Cancelling...')
-                    exit(1)        
-            else:
-                # use audit height
-                last_height = res['height']
-                logger.info(f'Starting at last audit height: {last_height}...')
-
-        if box_override != '':
-            sql = f'''where box_id = :box_override'''
-        else:
-            sql = f'''where height >= {last_height}'''
+        logger.info('Finding boxes...')
         sql = text(f'''
-            select box_id, height, row_number() over(partition by is_unspent order by height) as r
-            from {boxes_tablename}
-            {sql}
+            select b.box_id, b.height
+            from {boxes_tablename} b
+                left join utxos u on u.box_id = b.box_id
+            where u.box_id is null
         ''')
         # find boxes from checkpoint or standard sql query
         if VERBOSE: logger.debug(sql)
         with eng.begin() as con:
             boxes = con.execute(sql, {'box_override': box_override}).fetchall()
 
-        return boxes    
+        return boxes
 
     except Exception as e:
         logger.error(f'ERR: Fetching all unspent boxes {e}')
@@ -262,7 +211,7 @@ async def build_vesting():
     except Exception as e:
         logger.error(f'ERR: building balances {e}')
 
-async def process(last_height:int, use_checkpoint:bool=False, boxes_tablename:str='boxes', box_override:str='') -> int:
+async def process(use_checkpoint:bool=False, boxes_tablename:str='boxes', box_override:str='') -> int:
     try:
 
         t = Timer()
@@ -272,8 +221,8 @@ async def process(last_height:int, use_checkpoint:bool=False, boxes_tablename:st
         boxes_tablename = ''.join([i for i in boxes_tablename if i.isalpha()]) # only-alpha tablename
 
         # refresh 
-        await prepare_destination(boxes_tablename, last_height)
-        boxes = await get_all_unspent_boxes(boxes_tablename, box_override, last_height)
+        await prepare_destination(boxes_tablename)
+        boxes = await get_all_unspent_boxes(boxes_tablename, box_override)
         box_count = len(boxes)
         logger.debug(f'Found {box_count} boxes to process...')
 
@@ -282,9 +231,9 @@ async def process(last_height:int, use_checkpoint:bool=False, boxes_tablename:st
             logger.info('Sleeping to make sure boxes are processed...')
             sleep(2)    
 
+        max_height = 0 # track max height
         utxo_counter = 0
         last_r = 1
-        max_height = last_height
 
         # process all new, unspent boxes
         logger.info(f'Begin processing, {box_count} boxes total...')
@@ -309,6 +258,7 @@ async def process(last_height:int, use_checkpoint:bool=False, boxes_tablename:st
                     utxos = {}
 
                     # find all the calls to build boxes
+                    logger.warning(f'{r}::{next_r}::{boxes[r:next_r]}, len={box_count}')
                     urls = [[box['height'], f'''{NODE_URL}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
                     if VERBOSE: logger.debug(f'slice: {r}:{next_r} / up to height: {boxes[next_r-1]["height"]}')
                     while retries < 5:
@@ -322,6 +272,7 @@ async def process(last_height:int, use_checkpoint:bool=False, boxes_tablename:st
 
                     # fetch box info
                     for ergo_tree, box_id, box_assets, registers, nergs, creation_height, transaction_id, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[2]['value'], u[2]['creationHeight'], u[2]['transactionId'], u[1]] for u in utxo if u[0] == 200]:
+                        logger.warning(box_id)
                         try:
                             # track largest height processed
                             if max_height < height:
@@ -437,13 +388,33 @@ async def hibernate(new_height):
 #region MAIN
 
 async def main(args):
-    new_height = HEIGHT
+    # height not super useful, but ok for waiting ... TODO: make better
+    new_height = args.height
 
     while True:
         new_height = await process(new_height, boxes_tablename=args.juxtapose)
-        await hibernate(new_height)
+        if args.once:
+            exit(1)
+        else:
+            await hibernate(new_height)
 
+# Refresh UTXOs table
+# 1. remove all spent boxes
+# 2. add utxos where box_id is in boxes/juxtapose
+#
+# Perform steps irrelevant of height (may add something for this later)
+#
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
+    parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
+    # parser.add_argument("-E", "--endat", help="End at this height", type=int, default=10**10)
+    parser.add_argument("-P", "--prettyprint", help="Progress bar vs scrolling", action='store_true')
+    parser.add_argument("-O", "--once", help="One and done", action='store_true')
+    args = parser.parse_args()
+
+    PRETTYPRINT = args.prettyprint
+
     res = asyncio.run(main(args))
 
 #endregion MAIN
