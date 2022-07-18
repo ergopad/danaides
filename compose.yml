@@ -1,0 +1,23 @@
+version: '3.9'
+
+services:
+  unspent:
+    container_name: unspent
+    # image: python:3
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    env_file: ${ENV_FILE}
+    working_dir: /app
+    ports:
+      - 4444:4444
+    volumes:
+      - ./app:/app
+    networks:
+      - ergopad-net
+    # command: watchmedo auto-restart --recursive --pattern="*.py" --directory="/app" -- python -m main
+    command: tail /dev/null -f
+
+networks:
+  ergopad-net:
+    external: true

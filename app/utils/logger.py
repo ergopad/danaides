@@ -27,15 +27,15 @@ formatter = ColoredFormatter(
 )
 handler = StreamHandler()
 handler.setFormatter(formatter)
-logger = logging.getLogger('ergopad')
+logger = getLogger('ergopad')
 logger.setLevel('LEIF')
 logger.addHandler(handler)
 
 # prevent logging from other handlers
-logging.getLogger('uvicorn.error').propagate = False
-logging.getLogger('sqlalchemy.engine.Engine').propagate = False
-logging.getLogger('sqlalchemy.pool.impl.QueuePool').propagate = False
-logging.getLogger('ergopad').propagate = False
+getLogger('uvicorn.error').propagate = False
+getLogger('sqlalchemy.engine.Engine').propagate = False
+getLogger('sqlalchemy.pool.impl.QueuePool').propagate = False
+getLogger('ergopad').propagate = False
 
 import inspect
 myself = lambda: inspect.stack()[1][3]
@@ -62,7 +62,7 @@ class Timer:
 
         elapsed_time = time.perf_counter() - self._start_time
         self._start_time = None
-        logger.debug(f"Elapsed time: {elapsed_time:0.4f}s")
+        return elapsed_time
 
     def split(self):
         """check current elapsed time"""

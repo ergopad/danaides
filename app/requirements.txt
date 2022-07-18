@@ -1,0 +1,11 @@
+requests
+colorlog
+base58
+pydantic
+aiohttp
+pandas
+
+sqlalchemy
+psycopg2-binary
+
+ergo-python-appkit==0.1.0
