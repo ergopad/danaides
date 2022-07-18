@@ -21,16 +21,7 @@ PLUGINS = dotdict({
     'utxo': True,
 })
 
-parser = argparse.ArgumentParser()
-# parser.add_argument("-V", "--verbose", help="Wordy", action='store_true')
-parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
-parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
-parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
-parser.add_argument("-P", "--prettyprint", help="Progress bar vs. scrolling", action='store_true')
-parser.add_argument("-O", "--once", help="When complete, finish", action='store_true')
-args = parser.parse_args()
-
-PRETTYPRINT = args.prettyprint
+PRETTYPRINT = False
 VERBOSE = False
 FETCH_INTERVAL = 1500
 
@@ -73,42 +64,49 @@ async def add_outputs(outputs: dict, unspent: dict, height: int = -1) -> dict:
     return new
 
 async def find_tokens(transactions: dict, tokens: dict, height: int = -1) -> dict:
-    new = tokens
-    
-    # find all input box ids
-    for tx in transactions:
-        input_boxes = [i['boxId'] for i in tx['inputs']]
-        for o in tx['outputs']:
-            for a in o['assets']:
-                try:
-                    if a['tokenId'] in input_boxes:
-                        token_id = a['tokenId'] # this is also the box_id
-                        try: token_name = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R4'])])
-                        except: token_name = ''
-                        if 'R6' in o['additionalRegisters']:
-                            try: decimals = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R6'])])
-                            except: decimals = ErgoValue.fromHex(o['additionalRegisters']['R6']).getValue()
-                        else:
-                            decimals = 0
-                        try: decimals = int(decimals)
-                        except: decimals = 0
-                        try: amount = int(a['amount'])
-                        except: pass
-                        # some funky deserialization issues
-                        if type(amount) == int:
-                            logger.debug(f'''token found: {token_name}/{decimals}/{token_id}/{amount}''')
-                            new[token_id] = {
-                                'height': height,
-                                'token_name': token_name,
-                                'decimals': decimals,
-                                'amount': amount
-                            }
-                except Exception as e:
-                    blips.append({'asset': a, 'height': height, 'msg': f'invalid asset while looking for tokens'})
-                    logger.warning(f'invalid asset, {a} at height {height} while fetching tokens {e}')
-                    pass
+    try:
+        # find all input box ids
+        new = tokens
+        for tx in transactions:
+            input_boxes = [i['boxId'] for i in tx['inputs']]
+            for o in tx['outputs']:
+                for a in o['assets']:
+                    try:
+                        if a['tokenId'] in input_boxes:
+                            token_id = a['tokenId'] # this is also the box_id
+                            
+                            # if already exists, don't redo work
+                            if token_id not in new:
+                                try: token_name = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R4'])])
+                                except: token_name = ''
+                                if 'R6' in o['additionalRegisters']:
+                                    try: decimals = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R6'])])
+                                    except: decimals = ErgoValue.fromHex(o['additionalRegisters']['R6']).getValue()
+                                else:
+                                    decimals = 0
+                                try: decimals = int(decimals)
+                                except: decimals = 0
+                                try: amount = int(a['amount'])
+                                except: pass
+                                # some funky deserialization issues
+                                if type(amount) == int:
+                                    if VERBOSE: logger.debug(f'''token found: {token_name}/{decimals}/{token_id}/{amount}''')
+                                    new[token_id] = {
+                                        'height': height,
+                                        'token_name': token_name,
+                                        'decimals': decimals,
+                                        'amount': amount
+                                    }
+                    except Exception as e:
+                        blips.append({'asset': a, 'height': height, 'msg': f'invalid asset while looking for tokens'})
+                        logger.warning(f'invalid asset, {a} at height {height} while fetching tokens {e}')
+                        pass
 
-    return new
+        return new
+
+    except Exception as e:
+        logger.error(f'ERR: find tokens {e}')
+        return {}
 
 # upsert current chunk
 async def checkpoint(height, tokens, tokens_tablename='tokens_alt'):
@@ -135,12 +133,12 @@ async def checkpoint(height, tokens, tokens_tablename='tokens_alt'):
             if VERBOSE: logger.debug(sql)
             con.execute(sql)
 
-            sql = f'''
-                insert into audit_log (height, service)
-                values ({int(height)-1}, '{tokens_tablename}')
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)
+            # sql = f'''
+            #     insert into audit_log (height, service)
+            #     values ({int(height)-1}, '{tokens_tablename}')
+            # '''
+            # if VERBOSE: logger.debug(sql)
+            # con.execute(sql)
 
     except Exception as e:
         logger.error(f'ERR: checkpointing tokens {e}')
@@ -291,6 +289,17 @@ class App:
 
 ### MAIN
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    # parser.add_argument("-V", "--verbose", help="Wordy", action='store_true')
+    parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
+    parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
+    parser.add_argument("-T", "--truncate", help="Truncate boxes table", action='store_true')
+    parser.add_argument("-P", "--prettyprint", help="Progress bar vs. scrolling", action='store_true')
+    parser.add_argument("-O", "--once", help="When complete, finish", action='store_true')
+    args = parser.parse_args()
+
+    PRETTYPRINT = args.prettyprint
+
     app = App()
     app.start()
     

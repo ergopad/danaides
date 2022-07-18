@@ -21,10 +21,17 @@ async def process() -> int:
 
         # ergodex tokens
         boxes = getErgodexPoolBox() # boxes = list(map(explorerToErgoBox, res["items"]))        
+        if VERBOSE: logger.debug(f'{len(boxes)} boxes')
         pools = parseValidPools(boxes) # print('\n'.join([f'''{b}, {pools[b].y.asset.name}''' for b in range(12)]))        
+        if VERBOSE: logger.debug(f'{len(pools)} pools')
         prices = [pool.getCalculatedPrice() for pool in pools]
-        SigUSD_ERG = [(p['amountY']*(10**p['decimalX']))/(p['amountX']*(10**p['decimalY'])) for p in prices if p['assetY'].lower() == 'sigusd'][0]
-        logger.debug(f'''sigusd: {SigUSD_ERG}''')
+        if VERBOSE: logger.debug(f'{len(prices)} prices')
+        SigUSD_ERG = [(p['amountY']*(10**p['decimalX']))/(p['amountX']*(10**p['decimalY'])) for p in prices if p['assetY'].lower() == 'sigusd']
+        if len(SigUSD_ERG) > 0:
+            SigUSD_ERG = SigUSD_ERG[0]
+        else:
+            logger.warning(f'''Unable to find SigUSD_ERG in prices list {[p['assetY'] for p in prices]}''')
+        if VERBOSE: logger.debug(f'''sigusd: {SigUSD_ERG}''')
 
         # for token in tokens:
         for p in prices:

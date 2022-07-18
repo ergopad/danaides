@@ -358,21 +358,28 @@ async def process(use_checkpoint=False, last_height=-1, juxtapose='boxes', box_o
             '''
             res = con.execute(sql)
 
-            # update in_circulation
-            sql = text(f'''
-                with s as (
-                    select sum(amount) as current_total_supply
-                        , token_id::text
-                    from tokens_tokenomics
+            # update ergopad in_circulation
+            sql = f'''
+                with u as (
+                    select (each(assets)).key as token_id
+                        , (each(assets)).value::bigint as token_amount
+                    from utxos
+                )
+                , s as (
+                    select sum(token_amount)/100 as current_total_supply
+                        , token_id
+                    from u
+                    where token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
                     group by token_id
                 )
-                update tokens set current_total_supply = s.current_total_supply
-                    , in_circulation = s.current_total_supply/power(10, t.decimals) - tokens.vested - tokens.emitted - tokens.stake_pool
+                update tokens 
+                    set current_total_supply = s.current_total_supply
+                    , in_circulation = s.current_total_supply - tokens.vested - tokens.emitted - tokens.stake_pool
                 from s
-                    join tokens t on t.token_id = s.token_id
 				where s.token_id = tokens.token_id
-            ''')
+            '''
             res = con.execute(sql)
+
         sec = t.stop()
         logger.debug(f'Tokenomics complete: {sec:0.4f}s...                ')
 

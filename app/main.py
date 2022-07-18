@@ -7,7 +7,7 @@ from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, headers, NODE_URL, NODE_APIKEY
 from utils.aioreq import get_json_ordered
-from plugins import staking, prices, assets, tokenomics, utxo
+from plugins import staking, prices, tokenomics, utxo
 from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 class dotdict(dict):
@@ -84,26 +84,29 @@ async def find_tokens(transactions: dict, tokens: dict, height: int = -1) -> dic
                     try:
                         if a['tokenId'] in input_boxes:
                             token_id = a['tokenId'] # this is also the box_id
-                            try: token_name = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R4'])])
-                            except: token_name = ''
-                            if 'R6' in o['additionalRegisters']:
-                                try: decimals = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R6'])])
-                                except: decimals = ErgoValue.fromHex(o['additionalRegisters']['R6']).getValue()
-                            else:
-                                decimals = 0
-                            try: decimals = int(decimals)
-                            except: decimals = 0
-                            try: amount = int(a['amount'])
-                            except: pass
-                            # some funky deserialization issues
-                            if type(amount) == int:
-                                logger.debug(f'''token found: {token_name}/{decimals}/{token_id}/{amount}''')
-                                new[token_id] = {
-                                    'height': height,
-                                    'token_name': token_name,
-                                    'decimals': decimals,
-                                    'amount': amount
-                                }
+                            
+                            # if already exists, don't redo work
+                            if token_id not in new:
+                                try: token_name = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R4'])])
+                                except: token_name = ''
+                                if 'R6' in o['additionalRegisters']:
+                                    try: decimals = ''.join([chr(r) for r in ErgoAppKit.deserializeLongArray(o['additionalRegisters']['R6'])])
+                                    except: decimals = ErgoValue.fromHex(o['additionalRegisters']['R6']).getValue()
+                                else:
+                                    decimals = 0
+                                try: decimals = int(decimals)
+                                except: decimals = 0
+                                try: amount = int(a['amount'])
+                                except: pass
+                                # some funky deserialization issues
+                                if type(amount) == int:
+                                    if VERBOSE: logger.debug(f'''token found: {token_name}/{decimals}/{token_id}/{amount}''')
+                                    new[token_id] = {
+                                        'height': height,
+                                        'token_name': token_name,
+                                        'decimals': decimals,
+                                        'amount': amount
+                                    }
                     except Exception as e:
                         blips.append({'asset': a, 'height': height, 'msg': f'invalid asset while looking for tokens'})
                         logger.warning(f'invalid asset, {a} at height {height} while fetching tokens {e}')
@@ -166,8 +169,11 @@ async def checkpoint(height, unspent, tokens, boxes_tablename='boxes', tokens_ta
 
         # tokens
         if tokens == {}:
-            if VERBOSE: logger.debug('No tokens this interavl...')
+            if VERBOSE: logger.debug('No tokens this block...')
         else:
+            suffix = f'''TOKENS: Found {len(tokens)} tokens this block...                      '''
+            if PRETTYPRINT: printProgressBar(last_height, height, prefix='[TOKENS]', suffix=suffix, length = 50)
+            else: logger.info(suffix)
             df = pd.DataFrame.from_dict({
                 'token_id': list(tokens.keys()), 
                 'height': [n['height'] for n in tokens.values()], 
@@ -185,14 +191,17 @@ async def checkpoint(height, unspent, tokens, boxes_tablename='boxes', tokens_ta
                     insert into {tokens_tablename} (token_id, height, amount, token_name, decimals)
                         select c.token_id, c.height, c.amount, c.token_name, c.decimals
                         from checkpoint_{tokens_tablename} c
+                            left join {tokens_tablename} t on t.token_id = c.token_id
+                        -- unique constraint; but want all others
+                        where t.token_id is null
                         ;
                 '''
                 if VERBOSE: logger.debug(sql)
                 con.execute(sql)
 
                 sql = f'''
-                    insert into audit_log (height, service)
-                    values ({int(height)-1}, '{tokens_tablename}')
+                    insert into audit_log (height, service, notes)
+                    values ({int(height)-1}, '{tokens_tablename}', '{len(tokens)} found')
                 '''
                 if VERBOSE: logger.debug(sql)
                 con.execute(sql)
@@ -251,7 +260,7 @@ async def process(args, t):
         sql = f'''
             select height 
             from audit_log 
-            where service in ('{boxes_tablename}', '{tokens_tablename}')
+            where service in ('{boxes_tablename}')
             order by created_at desc 
             limit 1
         '''
@@ -315,6 +324,7 @@ async def process(args, t):
             await checkpoint(next_height, unspent, tokens, boxes_tablename, tokens_tablename)
                 
             unspent = {}
+            tokens = {}
 
     except KeyboardInterrupt:
         logger.error('Interrupted.')

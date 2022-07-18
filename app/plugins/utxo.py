@@ -57,9 +57,9 @@ async def checkpoint(utxos):
                         , ergo_tree::text
                         , address::varchar(64)
                         , nergs::bigint
-                        , trim(both '"' from registers)::hstore as registers
-                        , trim(both '"' from assets)::hstore as assets
-                        , trim(both '"' from transaction_id)::varchar(64) as transaction_id
+                        , trim(both '"' from registers::text)::hstore as registers
+                        , trim(both '"' from assets::text)::hstore as assets
+                        , trim(both '"' from transaction_id::text)::varchar(64) as transaction_id
                         , creation_height::int
                         , height::int
                     from checkpoint_utxos
@@ -193,6 +193,61 @@ async def build_vesting():
                             '1012040204000404040004020406040c0408040a050004000402040204000400040404000400d812d601b2a4730000d602e4c6a7050ed603b2db6308a7730100d6048c720302d605db6903db6503fed606e4c6a70411d6079d997205b27206730200b27206730300d608b27206730400d609b27206730500d60a9972097204d60b95917205b272067306009d9c7209b27206730700b272067308007309d60c959272077208997209720a999a9d9c7207997209720b7208720b720ad60d937204720cd60e95720db2a5730a00b2a5730b00d60fdb6308720ed610b2720f730c00d6118c720301d612b2a5730d00d1eded96830201aedb63087201d901134d0e938c721301720293c5b2a4730e00c5a79683050193c2720ec2720193b1720f730f938cb2720f731000017202938c7210017211938c721002720cec720dd801d613b2db630872127311009683060193c17212c1a793c27212c2a7938c7213017211938c721302997204720c93e4c67212050e720293e4c6721204117206'
                         )
                         -- and box_id = '9643bcdff57059490fdd2af3382248ffb9ce3739aaad032e335a0842d0081c07'
+                )
+                insert into {tbl} (box_id, vesting_key_id, parameters, token_id, remaining, address, ergo_tree)
+                    select v.box_id
+                        , v.vesting_key_id::varchar(64)
+                        , v.parameters::varchar(1024)
+                        , v.token_id::varchar(64)
+                        , v.remaining::bigint -- need to divide by decimals
+                        , a.address::varchar(64)
+                        , v.ergo_tree::text
+                    from v
+                        -- filter to only vesting keys
+                        join assets a on a.token_id = v.vesting_key_id            
+            ''')
+            con.execute(sql)
+
+    except Exception as e:
+        logger.error(f'ERR: building balances {e}')
+
+async def build_staking():
+    try:
+        tbl = 'staking'
+        with eng.begin() as con:
+            # drop
+            sql = text(f'''truncate table {tbl}''')
+            con.execute(sql)
+
+            sql = '''
+                select stake_ergotree, stake_token_id, token_name, token_id, token_type, emission_amount, decimals 
+                from tokens
+                where stake_ergotree is not null
+            '''
+            STAKE_KEYS = {}
+            res = eng.execute(sql).fetchall()
+            for key in res:
+                STAKE_KEYS[key['stake_ergotree']] = {
+                    'stake_token_id': key['stake_token_id'],
+                    'token_name': key['token_name'],
+                    'token_type': key['token_type'],
+                    'emission_amount': key['emission_amount'],
+                    'decimals': key['decimals'],
+                }
+
+            # ...and pop
+            sql = text(f'''
+                with v as (
+                    select id 
+                        , ergo_tree
+                        , box_id
+                        , registers->'R4' as parameters
+                        , right(registers->'R5', length(registers->'R5')-4) vesting_key_id
+                        , (each(assets)).key::varchar(64) as token_id
+                        , (each(assets)).value as remaining
+                    from utxos
+                    where ergo_tree in (
+                        )
                 )
                 insert into {tbl} (box_id, vesting_key_id, parameters, token_id, remaining, address, ergo_tree)
                     select v.box_id
