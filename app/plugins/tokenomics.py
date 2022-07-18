@@ -12,18 +12,9 @@ from utils.aioreq import get_json, get_json_ordered
 from ergo_python_appkit.appkit import ErgoValue
 from requests import get
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
-parser.add_argument("-O", "--override", help="Troubleshoot single box", default='')
-parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
-parser.add_argument("-E", "--endat", help="End at this height", type=int, default=10**10)
-parser.add_argument("-V", "--verbose", help="Be wordy", action='store_true')
-parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
-args = parser.parse_args()
-
 # ready, go
 ERGUSD_ORACLE_API = 'https://erg-oracle-ergusd.spirepools.com/frontendData'
-PRETTYPRINT = args.prettyprint
+PRETTYPRINT = False
 VERBOSE = False
 NERGS2ERGS = 10**9
 UPDATE_INTERVAL = 100 # update progress display every X blocks
@@ -93,15 +84,15 @@ async def get_ergo_price():
         logger.error(e)
         return 0
 
-async def process(use_checkpoint = False):
+async def process(use_checkpoint=False, last_height=-1, juxtapose='boxes', box_override=''):
     try:
         box_id = -1
         # manual boxes tablename
         # box_override = '331a963bbb33542f347aac7be1259980b08284e9a54dcf21e60342104820ba65'
         # box_override = 'ef7365a0d1817873e1f8e537ed0cc4dd32f80beb7f3f71799fb1a7da5f7d1802'
-        last_height = args.height
-        box_override = args.override
-        boxes_tablename = ''.join([i for i in args.juxtapose if i.isalpha()]) # only-alpha tablename
+        # last_height = args.height
+        # box_override = args.override
+        boxes_tablename = ''.join([i for i in juxtapose if i.isalpha()]) # only-alpha tablename
 
         logger.info(f'Setup...')
         t = Timer()
@@ -367,21 +358,28 @@ async def process(use_checkpoint = False):
             '''
             res = con.execute(sql)
 
-            # update in_circulation
-            sql = text(f'''
-                with s as (
-                    select sum(amount) as current_total_supply
-                        , token_id::text
-                    from tokens_tokenomics
+            # update ergopad in_circulation
+            sql = f'''
+                with u as (
+                    select (each(assets)).key as token_id
+                        , (each(assets)).value::bigint as token_amount
+                    from utxos
+                )
+                , s as (
+                    select sum(token_amount)/100 as current_total_supply
+                        , token_id
+                    from u
+                    where token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
                     group by token_id
                 )
-                update tokens set current_total_supply = s.current_total_supply
-                    , in_circulation = s.current_total_supply/power(10, t.decimals) - tokens.vested - tokens.emitted - tokens.stake_pool
+                update tokens 
+                    set current_total_supply = s.current_total_supply
+                    , in_circulation = s.current_total_supply - tokens.vested - tokens.emitted - tokens.stake_pool
                 from s
-                    join tokens t on t.token_id = s.token_id
 				where s.token_id = tokens.token_id
-            ''')
+            '''
             res = con.execute(sql)
+
         sec = t.stop()
         logger.debug(f'Tokenomics complete: {sec:0.4f}s...                ')
 
@@ -402,6 +400,17 @@ async def process(use_checkpoint = False):
 #endregion FUNCTIONS
 
 if __name__ == '__main__':
-    res = asyncio.run(process())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
+    parser.add_argument("-O", "--override", help="Troubleshoot single box", default='')
+    parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
+    parser.add_argument("-E", "--endat", help="End at this height", type=int, default=10**10)
+    parser.add_argument("-V", "--verbose", help="Be wordy", action='store_true')
+    parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
+    args = parser.parse_args()
+
+    PRETTYPRINT = args.prettyprint
+
+    res = asyncio.run(process(use_checkpoint=False, last_height=args.height, juxtapose=args.juxtapose, box_override=args.override))
     print(res)
 
