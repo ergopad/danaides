@@ -43,7 +43,7 @@ async def process() -> int:
             price = SigUSD_ERG / token_ERG
             
             try:
-                logger.debug(f'Token price {price} for {token_name} ({token_id})...')
+                if VERBOSE: logger.debug(f'Token price {price} for {token_name} ({token_id})...')
                 
                 # update tokens table with price
                 if price > 0:
@@ -58,7 +58,7 @@ async def process() -> int:
                         id = -1
                         if res is not None:
                             id = res['id']
-                            logger.warning(f'Found id {id} for token {token_id}...')
+                            if VERBOSE: logger.warning(f'Found id {id} for token {token_id}...')
                         else:
                             logger.warning(f'Token does not exist {token_id}...')
                         
