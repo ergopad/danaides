@@ -172,8 +172,8 @@ async def checkpoint(height, unspent, tokens, boxes_tablename='boxes', tokens_ta
             if VERBOSE: logger.debug('No tokens this block...')
         else:
             suffix = f'''TOKENS: Found {len(tokens)} tokens this block...                      '''
-            if PRETTYPRINT: printProgressBar(last_height, height, prefix='[TOKENS]', suffix=suffix, length = 50)
-            else: logger.info(suffix)
+            # if PRETTYPRINT: printProgressBar(last_height, height, prefix='[TOKENS]', suffix=suffix, length = 50)
+            # else: logger.info(suffix)
             df = pd.DataFrame.from_dict({
                 'token_id': list(tokens.keys()), 
                 'height': [n['height'] for n in tokens.values()], 

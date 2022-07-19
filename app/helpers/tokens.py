@@ -183,44 +183,57 @@ async def process(args, t):
         if last_height >= current_height:
             logger.warning('Already caught up...')
         while last_height < current_height:
-            next_height = last_height+FETCH_INTERVAL
-            if next_height > current_height:
-                next_height = current_height
-            batch_order = range(last_height, next_height)
+            try:
+                retries = 0
+                while retries < 5:
+                    if retries > 0:
+                        logger.warning(f'Retry attempt {retries}...')
+                        time.sleep(1) # take a deep breath before trying again...
 
-            # find block headers
-            suffix = f'''BLOCKS: last: {last_height}/{next_height}, max: {current_height}             '''
-            if PRETTYPRINT: printProgressBar(last_height, current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
-            else: logger.info(suffix)
-            urls = [[blk, f'{NODE_URL}/blocks/at/{blk}'] for blk in batch_order]
-            block_headers = await get_json_ordered(urls, headers)
+                    next_height = last_height+FETCH_INTERVAL
+                    if next_height > current_height:
+                        next_height = current_height
+                    batch_order = range(last_height, next_height)
 
-            # find transactions
-            suffix = f'''Transactions: {last_height}/{next_height}..{current_height}             '''
-            if PRETTYPRINT: printProgressBar(int(last_height+(FETCH_INTERVAL/3)), current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
-            else: logger.info(suffix)
-            urls = [[hdr[1], f'''{NODE_URL}/blocks/{hdr[2][0]}/transactions'''] for hdr in block_headers if hdr[1] != 0]
-            blocks = await get_json_ordered(urls, headers)
+                    # find block headers
+                    suffix = f'''BLOCKS: last: {last_height}/{next_height}, max: {current_height}             '''
+                    if PRETTYPRINT: printProgressBar(last_height, current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
+                    else: logger.info(suffix)
+                    urls = [[blk, f'{NODE_URL}/blocks/at/{blk}'] for blk in batch_order]
+                    block_headers = await get_json_ordered(urls, headers)
 
-            # recreate blockchain (must put together in order)
-            suffix = f'''Filter Unspent: {last_height}/{next_height}..{current_height}              '''
-            if PRETTYPRINT: printProgressBar(int(last_height+(2*FETCH_INTERVAL/3)), current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
-            else: logger.info(suffix)
-            for height, transactions in sorted([[b[1], b[2]] for b in blocks]):
-                # unspent = await del_inputs(tx['inputs'], unspent)
-                # unspent = await add_outputs(tx['outputs'], unspent, height)
-                tokens = await find_tokens(transactions['transactions'], tokens, height)
+                    # find transactions
+                    suffix = f'''Transactions: {last_height}/{next_height}..{current_height}             '''
+                    if PRETTYPRINT: printProgressBar(int(last_height+(FETCH_INTERVAL/3)), current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
+                    else: logger.info(suffix)
+                    urls = [[hdr[1], f'''{NODE_URL}/blocks/{hdr[2][0]}/transactions'''] for hdr in block_headers if hdr[1] != 0]
+                    blocks = await get_json_ordered(urls, headers)
 
-            # checkpoint
-            if VERBOSE: logger.debug('Checkpointing...')
-            last_height += FETCH_INTERVAL
-            suffix = f'Checkpoint at {next_height}...                  '
-            if PRETTYPRINT: printProgressBar(next_height, current_height, prefix=f'{t.split()}s', suffix=suffix, length=50)
-            else: logger.info(suffix)
-            await checkpoint(next_height, tokens, tokens_tablename)
-                
-            tokens = {}
+                    # recreate blockchain (must put together in order)
+                    suffix = f'''Filter Unspent: {last_height}/{next_height}..{current_height}              '''
+                    if PRETTYPRINT: printProgressBar(int(last_height+(2*FETCH_INTERVAL/3)), current_height, prefix=f'{t.split()}s', suffix=suffix, length = 50)
+                    else: logger.info(suffix)
+                    for height, transactions in sorted([[b[1], b[2]] for b in blocks]):
+                        # unspent = await del_inputs(tx['inputs'], unspent)
+                        # unspent = await add_outputs(tx['outputs'], unspent, height)
+                        tokens = await find_tokens(transactions['transactions'], tokens, height)
 
+                    # checkpoint
+                    if VERBOSE: logger.debug('Checkpointing...')
+                    last_height += FETCH_INTERVAL
+                    suffix = f'Checkpoint at {next_height}...                  '
+                    if PRETTYPRINT: printProgressBar(next_height, current_height, prefix=f'{t.split()}s', suffix=suffix, length=50)
+                    else: logger.info(suffix)
+                    await checkpoint(next_height, tokens, tokens_tablename)
+                        
+                    tokens = {}
+                    retries = 5
+
+            except Exception as e:
+                logger.error(f'ERR: {e}')
+                retries += 1
+                pass
+        
     except KeyboardInterrupt:
         logger.error('Interrupted.')
         try: sys.exit(0)
