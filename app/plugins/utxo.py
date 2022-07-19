@@ -313,7 +313,7 @@ async def process(use_checkpoint:bool=False, boxes_tablename:str='boxes', box_ov
                     utxos = {}
 
                     # find all the calls to build boxes
-                    logger.warning(f'{r}::{next_r}::{boxes[r:next_r]}, len={box_count}')
+                    if VERBOSE: logger.warning(f'{r}::{next_r}::{boxes[r:next_r]}, len={box_count}')
                     urls = [[box['height'], f'''{NODE_URL}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
                     if VERBOSE: logger.debug(f'slice: {r}:{next_r} / up to height: {boxes[next_r-1]["height"]}')
                     while retries < 5:
@@ -398,7 +398,6 @@ async def process(use_checkpoint:bool=False, boxes_tablename:str='boxes', box_ov
         await build_vesting()
 
         # await build_staking()
-        # await build_tokenomics()
 
         sec = t.stop()
         logger.debug(f'Processing complete: {sec:0.4f}s...                ')

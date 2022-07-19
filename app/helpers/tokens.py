@@ -15,12 +15,6 @@ class dotdict(dict):
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
 
-PLUGINS = dotdict({
-    'staking': True, 
-    'tokenomics': True,
-    'utxo': True,
-})
-
 PRETTYPRINT = False
 VERBOSE = False
 FETCH_INTERVAL = 1500
