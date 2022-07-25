@@ -1,58 +1,44 @@
-## Staking
-- Find all current unspent boxes
-
-- From current unspent boxes, find stake keys (R5.renderedValue where address=STAKE_ADDRESS and asset[0]=STAKE_KEY_ID)
-.. this also provides the amount from assets[1], which is the tokenId (i.e. ERGOPAD_ID) and value
-  > assets:
-  >   1028de73d018f0c9a374b71555c5b8f1390994f2f41633e7b9d68f77735782ee: 1
-  >   d71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413: 23858
-
-- From found stake keys find where asset[0] is R5.renderedValue (above), this is the address
-  > ergoTree: 0008cd03abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdef
-  > address: 9xyzpdqxyzpdqxyzpdqxyzpdqxyzpdqxyzpdqxyzpdqxyzpdqxyzpdq
-  > assets:
-  >   6fa205cd20a20a34ee888cd283e67c55296ddd2666ef67452d2b12da5e09ee62: 1
+# TL;DR
+- Unspent boxes are stored in boxes table, including height; this is current list of all unspent boxes (spent are not currently saved)
+- The boxes table needs to be constructed sequentially from height X to current height
+- The utxos table is created by removing spent boxes (i.e. any box missing from boxes), and adding newly unspent boxes
+- Assets, balances, vesting and staking are views of utxos; these may be pushed to tables and indexed for performance
+- Tokens are stored in tokens tabls sequentially by height
+- Tokenomics table is a view of tokens and utxo metrics including prices; likely stored in table for performance
+- Simple logging is sent to audit_log; cleanup after 3 days
 
 ## SQL
-```
-# begin update with boxes to update is_spent
-# partition table (list) on is_spent
-# update starting from max(height)+1
-# if unspent and last_seen height < current_height, invalid?
-```
-### boxes
-. id
-. box_id
-. height
-. is_spent
-. last_seen (height?)
-
-```
-# using f'{NODE}/blocks/at/{i}'
-# .. only need to check heights from unspent (boxes table)
-```
-### stake_keys
-. id
-. name (i.e. Ergopad/Paideia)
-. token_id (ERGOPAD_ID)
-. address (STAKE_ADDRESS)
-. tree (STAKE_ADDRESS_TREE)
-. key_id (STAKE_KEY_ID)
-
-```
-# only need to check heights from unspent (boxes table)
-```
-### stake_holders
 ```sql
-. id
-. address
-. config_id (-> stake_config)
-. box_id
-. amount
-. penalty
-. last_seen (height?)
+-- allow hstore columns
+create extension hstore;
+```
 
+### Objects
+tables
+- boxes
+- utxos
+- tokens
+- audit_log
 
+views
+- assets
+- balances
+- vesting
+- staking
+- tokenomics (tokenomics_ergopad)
+
+snapshots
+- all tables can be snapshot with naming convention: [table]_[height] (i.e. boxes_700000)
+
+### CLI
+- -H --height - begin at this height (0 will include genesis block)
+- -V --verbose - be wordy
+- -P --prettyprint - conserve node requests and wait polling to single line (lf, without cr)
+- -B --override - process with just this box_id (use for testing)
+- -O --once - process once and complete (don't wait for next block)
+
+#### Tables
+```sql
 -- drop table audit_log
 create table audit_log (
     id serial not null primary key,
@@ -64,60 +50,67 @@ create table audit_log (
 
 -- drop table boxes
 create table boxes (
-    id serial not null,
-    box_id varchar(64) not null,
+    id serial not null primary key,
+    box_id varchar(64) not null unique,
     height int not null,
     nerg bigint,
-    is_unspent boolean default true,
-    primary key (id, is_unspent),
-    unique (box_id, is_unspent)
+    -- is_unspent boolean default true,
+    -- primary key (id, is_unspent),
+    -- unique (box_id, is_unspent)
 );
-partition by list(is_unspent);
+-- partition by list(is_unspent);
 
-create table boxes_spent partition of boxes for values in (false);
-create table boxes_unspent partition of boxes for values in (true);
+-- create table boxes_spent partition of boxes for values in (false);
+-- create table boxes_unspent partition of boxes for values in (true);
 
-create table config (
-    id serial primary key,
-    table_name varchar(100) not null,
-    parameter varchar(100) not null,
-    value varchar(100) not null,
-    description varchar(1000) null    
+-- drop table utxos
+create table utxos (
+	id serial not null primary key,
+	box_id varchar(64) not null unique,
+	ergo_tree text,
+	address varchar(64) not null,
+	nergs bigint default 0, -- nergs
+	registers hstore,
+	assets hstore,
+	transaction_id varchar(64),
+	creation_height int,
+	height int not null
 );
+create unique index on utxos (box_id);
 
--- drop  table addresses_staking 
-create table addresses_staking (
-    id serial primary key,
-    address text,
-    token_id varchar(64) not null,
-    box_id varchar(64) not null,
-    amount bigint
-);
-
--- drop table keys_staking 
-create table keys_staking (
-    id serial primary key,
-    stakekey_token_id varchar(64),
-    box_id varchar(64),
-    token_id varchar(64),
-    amount bigint,
-    penalty bigint
-);
-
--- drop table tokens
-create table tokens (
-    id serial primary key,
-    token_name varchar(500),
-    token_id varchar(64), -- ergopad [official token]
-    token_type varchar(500), -- EIP-0004
-    emission_amount bigint, -- 400M
-    decimals int, -- 2
-    stake_token_id varchar(64), -- ergopad Stake Token
-    stake_ergotree varchar(2000),
-    current_total_supply bigint,
-    in_circulation bigint,
-    token_price numeric(20, 10)
-);
+-- -- drop  table addresses_staking 
+-- create table addresses_staking (
+--     id serial primary key,
+--     address text,
+--     token_id varchar(64) not null,
+--     box_id varchar(64) not null,
+--     amount bigint
+-- );
+-- 
+-- -- drop table keys_staking 
+-- create table keys_staking (
+--     id serial primary key,
+--     stakekey_token_id varchar(64),
+--     box_id varchar(64),
+--     token_id varchar(64),
+--     amount bigint,
+--     penalty bigint
+-- );
+-- 
+-- -- drop table tokens
+-- create table tokens (
+--     id serial primary key,
+--     token_name varchar(500),
+--     token_id varchar(64), -- ergopad [official token]
+--     token_type varchar(500), -- EIP-0004
+--     emission_amount bigint, -- 400M
+--     decimals int, -- 2
+--     stake_token_id varchar(64), -- ergopad Stake Token
+--     stake_ergotree varchar(2000),
+--     current_total_supply bigint,
+--     in_circulation bigint,
+--     token_price numeric(20, 10)
+-- );
 
 -- use /utils/addressToRaw/{address} on the smart contract to get stake_ergotree
 insert into tokens (id, token_name, token_id, stake_token_id, stake_ergotree, decimals, token_type, emission_amount)
@@ -179,87 +172,9 @@ values (
     'EIP-004',
     400000000000
 );
-
-create extension hstore;
-
--- drop table utxos
-create table utxos (
-	id serial not null primary key,
-	box_id varchar(64) not null unique,
-	ergo_tree text,
-	address varchar(64) not null,
-	nergs bigint default 0, -- nergs
-	registers hstore,
-	assets hstore,
-	transaction_id varchar(64),
-	creation_height int,
-	height int not null
-);
-create unique index on utxos (box_id);
 ```
 
-# utxos
-```sql-- truncate table utxos
-insert into utxos (box_id, ergo_tree, address, nergs, registers, assets, transaction_id, creation_height, height)
-    select 
-        c.box_id::varchar(64)
-        , c.ergo_tree::text
-        , c.address::varchar(64)
-        , c.nergs::bigint
-        , trim(both '"' from c.registers)::hstore as registers
-        , trim(both '"' from c.assets)::hstore as assets
-        , trim(both '"' from c.transaction_id)::varchar(64) as transaction_id
-        , c.creation_height::int
-        , c.height::int
-    from checkpoint_utxos c
-```
-
-# assets and balances (derived from utxos)
 ```sql
--- assets
--- drop table assets
-create table assets (
-	id serial not null primary key,
-	address varchar(64),
-	token_id varchar(64),
-	amount bigint
-);
-create unique index on assets (address, token_id);
--- truncate table assets
--- insert into assets (address, token_id, amount)
-with a as (
-	select 
-		address
-		, (each(assets)).key::varchar(64) as token_id
-		, (each(assets)).value::bigint as amount
-	from utxos
-	where address != '' -- only wallets; no smart contracts
-)
--- truncate table assets
-insert into assets (address, token_id, amount)
-	select 
-		address
-		, token_id
-		, sum(amount) as amount
-	from a 
-	group by address, token_id;
-	
-	
--- balances 
--- drop table balances
-create table balances (
-	id serial not null primary key,
-	address varchar(64),
-	nergs bigint
-);
-create unique index on balances (address);
--- truncate table balances
-insert into balances (address, nergs)
-	select address, sum(nergs) as nergs 
-	from utxos
-	where address != '' -- only wallets; no smart contracts
-	group by address;
-
 -- vesting
 -- box_id, vesting_key_id, parameters, token_id, remaining, address, ergo_tree
 -- drop table vesting
@@ -367,29 +282,101 @@ alter sequence tokens_id_seq restart with 6;
 
 # tokens_tokenomics
 ```sql
-create table tokens_tokenomics
-(
-    id serial not null primary key,
-    address text,
-    token_id varchar(64),
-    box_id varchar(64),
-    amount bigint,
-    height integer
-);
-alter table tokens_tokenomics add unique (box_id, token_id);
-create index tokens_tokenomics_boxid on tokens_tokenomics (box_id);
+-- drop view tokenomics
+create view tokenomics as
+	with k as (
+		select vested
+			, emitted
+			, staked
+			, stake_pool
+			, 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413' as token_id
+		from tokenomics_ergopad
+	)
+	select t.token_name
+		, t.token_id
+		, k.vested
+		, k.emitted
+		, k.staked
+		, k.stake_pool
+		, t.token_price
+		, t.current_total_supply/power(10, t.decimals) as current_total_supply
+		, t.emission_amount/power(10, t.decimals) as initial_total_supply
+		, (t.emission_amount - t.current_total_supply)/power(10, t.decimals) as burned
+		, t.token_price * (t.current_total_supply - k.vested - k.emitted - coalesce(k.stake_pool, 0))/power(10, t.decimals) as market_cap
+		, (t.current_total_supply - k.vested - k.emitted - coalesce(k.stake_pool, 0))/power(10, t.decimals) as in_circulation
+	from tokens t
+		join k on k.token_id = t.token_id
+	where t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+
+-- drop view tokenomics_ergopad
+create view tokenomics_ergopad as
+	with 
+	-- vested
+	vested as (
+		select (each(assets)).value::bigint as token_amount
+		from utxos
+		where ergo_tree = '10070400040204000500040004000400d80bd601e4c6a7040ed602b2db6308a7730000d6038c720201d604e4c6a70805d605e4c6a70705d606e4c6a70505d607e4c6a70605d6089c9d99db6903db6503fe720572067207d6098c720202d60a9972047209d60b958f99720472087207997204720a997208720ad1ed93b0b5a5d9010c63ededed93c2720c720193e4c6720c040ee4c6a7090e93b1db6308720c7301938cb2db6308720c7302000172037303d9010c41639a8c720c018cb2db63088c720c0273040002720bec937209720baea5d9010c63ededededededededed93c1720cc1a793c2720cc2a7938cb2db6308720c730500017203938cb2db6308720c73060002997209720b93e4c6720c040e720193e4c6720c0505720693e4c6720c0605720793e4c6720c0705720593e4c6720c0805720493e4c6720c090ee4c6a7090e'
+	)
+	-- emitted
+	, emitted as (
+		select (each(assets)).value::bigint as token_amount
+		from utxos
+		where ergo_tree = '102d04000e20d71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de41304000e2005cde13424a7972fbcd0b43fccbb5e501b1f75302175178fc86d8f243f3f312504040404040604020400040204040402050004020400040004020402040404040400040004000402040004000e201028de73d018f0c9a374b71555c5b8f1390994f2f41633e7b9d68f77735782ee040004020100040604000500040204000400040204020400040204020404040404060100d802d601b2a4730000d602730195ed938cb2db6308720173020001730393c5b2a4730400c5a7d80ad603b2a5730500d604e4c672030411d605e4c672010411d606b27204730600d607b2a4730700d608b2e4c672070411730800d609db6308a7d60a9a8cb2db63087207730900029592b17209730a8cb27209730b0002730cd60bdb63087203d60cb2720b730d00d19683080193c27203c2a793b27204730e00b27205730f0093b27204731000b2720573110093b27204731200b27205731300937206958f7208720a7208720a938cb2720b731400018cb2720973150001938c720c017202938c720c0272069593c57201c5a7d80ad603b2a5731600d604db63087203d605db6308a7d6068cb2720573170002d607b5a4d9010763d801d609db630872079591b172097318ed938cb2720973190001731a93b2e4c672070411731b00b2e4c6a70411731c00731dd608e4c6a70411d609b27208731e00d60ab27208731f00d60bb072077320d9010b41639a8c720b019d9c8cb2db63088c720b02732100027209720ad60ce4c672030411d19683070193c27203c2a7938cb27204732200018cb272057323000195907206720b93b172047324d801d60db27204732500ed938c720d017202928c720d02997206720b93b2720c732600720a93b2720c732700b2720873280093b2720c73290099b27208732a007eb172070593b2720c732b007209d1732c'
+	)
+	-- staked
+	, staked_addresses as (
+		select distinct token_id
+		from addresses_staking
+	)
+	, staked as (
+		select sum(k.amount/power(10, t.decimals)) as amount
+		from keys_staking k
+			join staked_addresses a on a.token_id = k.stakekey_token_id
+			join tokens t on t.stake_token_id = k.token_id
+		where t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'				
+	)
+	-- stake pool
+	, stake_pool_assets as (
+		select (each(assets)).value::bigint as token_amount
+			, (each(assets)).key::varchar(64) as token_id
+		from utxos 
+		where ergo_tree = '1014040004000e2005cde13424a7972fbcd0b43fccbb5e501b1f75302175178fc86d8f243f3f312504020402040204040404040205000400040004000402040204000400040004000100d801d601b2a473000095ed938cb2db6308720173010001730293c5b2a4730300c5a7d808d602b2a5730400d603db63087202d604db6308a7d605b27204730500d606db6308b2a4730600d6079592b1720673078cb27206730800027309d6089a8c7205027207d609b2e4c6a70411730a00d19683050193c27202c2a7938cb27203730b00018cb27204730c0001959172087209d801d60ab27203730d00ed938c720a018c720501938c720a02997208720993b17203730e93b2e4c672020411730f00720993b2e4c6b2a57310000411731100999ab2e4c67201041173120072097207d17313'
+	)
+	, stake_pool as (
+		select sum(token_amount) as amount
+		from stake_pool_assets
+		where token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+	)
+
+	select 
+		(select sum(token_amount) from vested)::decimal(32, 10) as vested -- 317042346
+		, (select sum(token_amount) from emitted)::decimal(32, 10) as emitted -- 1375
+		, (select sum(amount) from staked)::decimal(32, 10) as staked -- 60423356.210000046
+		, (select sum(amount) from stake_pool)::decimal(32, 10) as stake_pool -- 27851650278
+
+-- create table tokens
+-- (
+--     id serial not null primary key,
+--     address text,
+--     token_id varchar(64),
+--     box_id varchar(64),
+--     amount bigint,
+--     height integer
+-- );
+-- alter table tokens_tokenomics add unique (box_id, token_id);
+-- create index tokens_tokenomics_boxid on tokens_tokenomics (box_id);
 ```
 
 # store token_agg values from blockchain
 ```sql
-create table tokens_tokenomics_agg (
-    id serial not null primary key, 
-    agg_id int, 
-    token_id varchar(64),
-    amount bigint,
-    box_id varchar(64),
-    height int
-)
+-- create table tokens_tokenomics_agg (
+--     id serial not null primary key, 
+--     agg_id int, 
+--     token_id varchar(64),
+--     amount bigint,
+--     box_id varchar(64),
+--     height int
+-- )
 ```
 
 ## PIT Tables
@@ -426,6 +413,160 @@ create table prices(
 	token_id varchar(64) not null,
 	price decimal(20, 10) default 0.0
 )
+
+```
+
+#### Views
+```sql
+-- select * from v_balances where address in ('9hMa8bqVq31HYaCqbufEbWZFURFrHhxuHui3w1dmAtFCF1r4LZm', '9gByj99ezLVW2tgZVsUBRZtBUQbngXvFLEpWsqhKkAWuykhLaSo')
+create view v_balances as
+	select address, sum(nergs) as nergs 
+	from utxos
+	where address != '' -- only wallets; no smart contracts
+	group by address
+;
+
+-- select * from v_assets where address in ('9hMa8bqVq31HYaCqbufEbWZFURFrHhxuHui3w1dmAtFCF1r4LZm', '9gByj99ezLVW2tgZVsUBRZtBUQbngXvFLEpWsqhKkAWuykhLaSo')
+create view v_assets as 
+	with a as (
+		select 
+			address
+			, (each(assets)).key::varchar(64) as token_id
+			, (each(assets)).value::bigint as amount
+		from utxos
+		where address != '' -- only wallets; no smart contracts
+	)
+	-- insert into {tbl} (address, token_id, amount)
+	select 
+		address
+		, token_id
+		, sum(amount) as amount
+	from a 
+	group by address, token_id
+;
+
+-- select * from v_vesting
+create view v_vesting as
+	with v as (
+		select id 
+			, ergo_tree
+			, box_id
+			, registers->'R4' as parameters
+			, right(registers->'R5', length(registers->'R5')-4) vesting_key_id
+			, (each(assets)).key::varchar(64) as token_id
+			, (each(assets)).value as remaining
+		from utxos
+		where ergo_tree in (
+				'100e04020400040404000402040604000402040204000400040404000400d810d601b2a4730000d602e4c6a7050ed603b2db6308a7730100d6048c720302d605e4c6a70411d6069d99db6903db6503feb27205730200b27205730300d607b27205730400d608b27205730500d6099972087204d60a9592720672079972087209999d9c7206720872077209d60b937204720ad60c95720bb2a5730600b2a5730700d60ddb6308720cd60eb2720d730800d60f8c720301d610b2a5730900d1eded96830201aedb63087201d901114d0e938c721101720293c5b2a4730a00c5a79683050193c2720cc2720193b1720d730b938cb2720d730c00017202938c720e01720f938c720e02720aec720bd801d611b2db63087210730d009683060193c17210c1a793c27210c2a7938c721101720f938c721102997204720a93e4c67210050e720293e4c6721004117205',
+				'1012040204000404040004020406040c0408040a050004000402040204000400040404000400d812d601b2a4730000d602e4c6a7050ed603b2db6308a7730100d6048c720302d605db6903db6503fed606e4c6a70411d6079d997205b27206730200b27206730300d608b27206730400d609b27206730500d60a9972097204d60b95917205b272067306009d9c7209b27206730700b272067308007309d60c959272077208997209720a999a9d9c7207997209720b7208720b720ad60d937204720cd60e95720db2a5730a00b2a5730b00d60fdb6308720ed610b2720f730c00d6118c720301d612b2a5730d00d1eded96830201aedb63087201d901134d0e938c721301720293c5b2a4730e00c5a79683050193c2720ec2720193b1720f730f938cb2720f731000017202938c7210017211938c721002720cec720dd801d613b2db630872127311009683060193c17212c1a793c27212c2a7938c7213017211938c721302997204720c93e4c67212050e720293e4c6721204117206'
+			)
+			-- and box_id = '9643bcdff57059490fdd2af3382248ffb9ce3739aaad032e335a0842d0081c07'
+	)
+	, a as (
+		select 
+			address
+			, (each(assets)).key::varchar(64) as token_id
+			, (each(assets)).value::bigint as amount
+		from utxos
+		where address != '' -- only wallets; no smart contracts
+	)
+	-- insert into {tbl} (box_id, vesting_key_id, parameters, token_id, remaining, address, ergo_tree)
+	select v.box_id
+		, v.vesting_key_id::varchar(64)
+		, v.parameters::varchar(1024)
+		, v.token_id::varchar(64)
+		, v.remaining::bigint -- need to divide by decimals
+		, a.address::varchar(64)
+		, v.ergo_tree::text
+	from v
+		-- filter to only vesting keys
+		join a on a.token_id = v.vesting_key_id
+;
+
+-- select * from v_staking where address = '9hMa8bqVq31HYaCqbufEbWZFURFrHhxuHui3w1dmAtFCF1r4LZm'
+create view v_staking as
+	with 
+	ergopad as (
+		select
+			box_id
+			, height
+			, (assets->'d71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413')::bigint as amount
+			, (assets->'1028de73d018f0c9a374b71555c5b8f1390994f2f41633e7b9d68f77735782ee')::int as proxy
+			, registers->'R4' as penalty
+			, trim(leading '0e20' from registers->'R5') as stakekey_token_id
+			, t.decimals
+		from utxos u
+			join tokens t on t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+		where ergo_tree = '1017040004000e200549ea3374a36b7a22a803766af732e61798463c3332c5f6d86c8ab9195eed59040204000400040204020400040005020402040204060400040204040e2005cde13424a7972fbcd0b43fccbb5e501b1f75302175178fc86d8f243f3f312504020402010001010100d802d601b2a4730000d6028cb2db6308720173010001959372027302d80bd603b2a5dc0c1aa402a7730300d604e4c672030411d605e4c6a70411d606db63087203d607b27206730400d608db6308a7d609b27208730500d60ab27206730600d60bb27208730700d60c8c720b02d60de4c672010411d19683090193c17203c1a793c27203c2a793b272047308009ab27205730900730a93e4c67203050ee4c6a7050e93b27204730b00b27205730c00938c7207018c720901938c7207028c720902938c720a018c720b01938c720a029a720c9d9cb2720d730d00720cb2720d730e00d801d603b2a4730f009593c57203c5a7d801d604b2a5731000d1ed93720273119593c27204c2a7d801d605c67204050e95e67205ed93e47205e4c6a7050e938cb2db6308b2a573120073130001e4c67203050e73147315d17316'
+	)
+	, paideia as (
+		select
+			box_id
+			, height
+			, (assets->'1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489')::bigint as amount
+			, (assets->'245957934c20285ada547aa8f2c8e6f7637be86a1985b3e4c36e4e1ad8ce97ab')::int as proxy
+			, registers->'R4' as penalty
+			, trim(leading '0e20' from registers->'R5') as stakekey_token_id
+			, t.decimals
+		from utxos u
+			join tokens t on t.token_id = '1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489'
+		where ergo_tree = '101f040004000e2012bbef36eaa5e61b64d519196a1e8ebea360f18aba9b02d2a21b16f26208960f040204000400040001000e20b682ad9e8c56c5a0ba7fe2d3d9b2fbd40af989e8870628f4a03ae1022d36f0910402040004000402040204000400050204020402040604000100040404020402010001010100040201000100d807d601b2a4730000d6028cb2db6308720173010001d6039372027302d604e4c6a70411d605e4c6a7050ed60695ef7203ed93c5b2a4730300c5a78fb2e4c6b2a57304000411730500b2e4c6720104117306007307d6079372027308d1ecec957203d80ad608b2a5dc0c1aa402a7730900d609e4c672080411d60adb63087208d60bb2720a730a00d60cdb6308a7d60db2720c730b00d60eb2720a730c00d60fb2720c730d00d6107e8c720f0206d611e4c6720104119683090193c17208c1a793c27208c2a793b27209730e009ab27204730f00731093e4c67208050e720593b27209731100b27204731200938c720b018c720d01938c720b028c720d02938c720e018c720f01937e8c720e02069a72109d9c7eb272117313000672107eb27211731400067315957206d801d608b2a5731600ed72079593c27208c2a7d801d609c67208050e95e67209ed93e472097205938cb2db6308b2a57317007318000172057319731a731b9595efec7206720393c5b2a4731c00c5a7731d7207731e'
+	)
+	, a as (
+		select 
+			address
+			, id
+			, (each(assets)).key::varchar(64) as token_id
+			, (each(assets)).value::bigint as amount
+		from utxos
+		-- where address = '9hMa8bqVq31HYaCqbufEbWZFURFrHhxuHui3w1dmAtFCF1r4LZm'
+	)
+	-- ergopad
+	select
+		a.address
+		, a.token_id
+		, u.box_id
+		, u.stakekey_token_id
+		, u.amount/power(10, u.decimals) as amount
+		, u.penalty
+	from ergopad u
+		join a on a.token_id = u.stakekey_token_id
+	where proxy = 1
+
+	-- paideia
+	union all
+	select
+		a.address
+		, a.token_id
+		, u.box_id
+		, u.stakekey_token_id
+		, u.amount/power(10, u.decimals) as amount
+		, u.penalty
+	from paideia u
+		join a on a.token_id = u.stakekey_token_id
+	where proxy = 1
+
+```
+
+### misc/stats
+```sql
+-- drop view v_audit_stats
+create view v_audit_stats as
+	with ss as (
+		select created_at
+			, lag(created_at) over(order by created_at) as prev
+			, height
+			, service
+		from audit_log
+	)
+	select max(height) as max_height
+		, avg(created_at - prev) as avg_block
+		, count(*) as block_count
+		, service
+	from ss
+	where created_at is not null
+		-- and service = 'boxes'
+	group by service
 
 ```
 

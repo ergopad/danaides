@@ -199,7 +199,7 @@ def getErgodexPoolBox():
             -- help find most recent value by height
             , u as (
                 select token_id, amount, height
-                    , row_number() over(partition by token_id order by height desc) as r
+                    , row_number() over(partition by token_id order by amount desc) as r
                 from tok
             )
             select u.token_id as "tokenId"

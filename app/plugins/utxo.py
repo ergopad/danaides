@@ -108,6 +108,7 @@ async def get_all_unspent_boxes(boxes_tablename:str, box_override:str):
         # find boxes from checkpoint or standard sql query
         if VERBOSE: logger.debug(sql)
         with eng.begin() as con:
+            # TODO: implement box_override
             boxes = con.execute(sql, {'box_override': box_override}).fetchall()
 
         return boxes
@@ -194,6 +195,14 @@ async def build_vesting():
                         )
                         -- and box_id = '9643bcdff57059490fdd2af3382248ffb9ce3739aaad032e335a0842d0081c07'
                 )
+                -- , a as (
+                --     select 
+                --         address
+                --         , (each(assets)).key::varchar(64) as token_id
+                --         , (each(assets)).value::bigint as amount
+                --     from utxos
+                --     where address != '' -- only wallets; no smart contracts
+                -- )
                 insert into {tbl} (box_id, vesting_key_id, parameters, token_id, remaining, address, ergo_tree)
                     select v.box_id
                         , v.vesting_key_id::varchar(64)
@@ -204,7 +213,7 @@ async def build_vesting():
                         , v.ergo_tree::text
                     from v
                         -- filter to only vesting keys
-                        join assets a on a.token_id = v.vesting_key_id            
+                        join v_assets a on a.token_id = v.vesting_key_id            
             ''')
             con.execute(sql)
 
@@ -266,22 +275,22 @@ async def build_staking():
     except Exception as e:
         logger.error(f'ERR: building balances {e}')
 
-async def process(use_checkpoint:bool=False, boxes_tablename:str='boxes', box_override:str='') -> int:
+async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes', box_override:str='') -> int:
     try:
 
         t = Timer()
         t.start()
 
         # cleanup tablename
-        boxes_tablename = ''.join([i for i in boxes_tablename if i.isalpha()]) # only-alpha tablename
+        boxes_tablename = ''.join([i for i in args.juxtapose if i.isalpha()]) # only-alpha tablename
 
         # refresh 
         await prepare_destination(boxes_tablename)
-        boxes = await get_all_unspent_boxes(boxes_tablename, box_override)
+        boxes = await get_all_unspent_boxes(boxes_tablename, args.override)
         box_count = len(boxes)
         logger.debug(f'Found {box_count} boxes to process...')
 
-        if not use_checkpoint:
+        if not is_plugin:
             # no special processing for checkpoint call
             logger.info('Sleeping to make sure boxes are processed...')
             sleep(2)    
@@ -373,7 +382,7 @@ async def process(use_checkpoint:bool=False, boxes_tablename:str='boxes', box_ov
 
                     # reset for outer loop: height range
                     last_r = r
-                    if box_override != '':
+                    if args.override != '':
                         exit(1)
 
                     retries = 3
@@ -388,11 +397,11 @@ async def process(use_checkpoint:bool=False, boxes_tablename:str='boxes', box_ov
                 sleep(1) # give node a break
                 pass
 
-        logger.debug('Rebuild balances table...')
-        await build_balances()
+        # logger.debug('Rebuild balances table...')
+        # await build_balances()
         
-        logger.debug('Rebuild assets table...')
-        await build_assets()
+        # logger.debug('Rebuild assets table...')
+        # await build_assets()
 
         logger.debug('Rebuild vesting table...')
         await build_vesting()
