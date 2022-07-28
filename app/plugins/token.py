@@ -17,11 +17,16 @@ BOXES = 'boxes'
 TOKENS = 'tokens'
 
 # upsert current chunk
-async def checkpoint(height, tokens):
+async def checkpoint(height, tokens, is_plugin: bool=False, args=None):
     try:
-        suffix = f'''TOKENS: Found {len(tokens)} tokens this block...                      '''
-        # if PRETTYPRINT: printProgressBar(last_height, height, prefix='[TOKENS]', suffix=suffix, length = 50)
+        # handle globals when process called from as plugin
+        if is_plugin and (args != None):
+            if args.prettyprint: PRETTYPRINT = True
+
+        # suffix = f'''TOKENS: Found {len(tokens)} tokens in current block range (starting at {height})...                      '''
+        # if PRETTYPRINT: printProgressBar(height, height, prefix='[TOKENS]', suffix=suffix, length=50)
         # else: logger.info(suffix)
+        if VERBOSE: logger.debug(tokens)
         df = pd.DataFrame.from_dict({
             'token_id': list(tokens.keys()), 
             'height': [n['height'] for n in tokens.values()], 
@@ -29,8 +34,9 @@ async def checkpoint(height, tokens):
             'token_name': [n['token_name'] for n in tokens.values()],
             'decimals': [n['decimals'] for n in tokens.values()], 
         })
-        # logger.info(df)
+        if VERBOSE: logger.warning(df)
         df.to_sql(f'checkpoint_{TOKENS}', eng, if_exists='replace')
+        if VERBOSE: logger.debug('saved to checkpoint_tokens')
 
         # execute as transaction
         with eng.begin() as con:
@@ -58,9 +64,13 @@ async def checkpoint(height, tokens):
         logger.error(f'ERR: checkpointing {e}')
         pass  
 
-# 
-async def process(transactions: dict, tokens: dict, height: int, is_plugin: bool=False) -> dict:
+# extract tokens from the bolckchain
+async def process(transactions: dict, tokens: dict, height: int, is_plugin: bool=False, args=None) -> dict:
     try:
+        # handle globals when process called from as plugin
+        if is_plugin and (args != None):
+            if args.prettyprint: PRETTYPRINT = True
+
         # find all input box ids
         new = tokens
         for tx in transactions:
@@ -129,112 +139,22 @@ def cli():
 
     return args
 
-class App:
-    def __init__(self):
-        self.shutdown = False
-        signal.signal(signal.SIGINT, self.exit_gracefully)
-        signal.signal(signal.SIGTERM, self.exit_gracefully)
+#region MAIN
+async def main(args):
+    res = await process()
+    if res['tokens'] == None:
+        logger.error(f'''ERR: processing tokens {res['message']}''')
+    else:
+        logger.debug(res['tokens'])
 
-    def exit_gracefully(self, signum):
-        print('Received:', signum)
-        self.shutdown = True
-
-    def init(self):
-        logger.info("Ready, go...")
-
-    def stop(self):
-        logger.info("Fin.")
-
-    # find all new currnet blocks
-    async def process(self, args, height):
-        # init timer
-        t = Timer()
-        t.start()
-
-        # process
-        res = await process(args, t, height)
-        
-        # timer
-        sec = t.stop()
-        logger.debug(f'Danaides update took {sec:0.4f}s...')
-        
-        return res['current_height']
-
-    # wait for new height
-    async def hibernate(self, last_height):
-
-### MAIN
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='staking')
+    parser.add_argument("-P", "--prettyprint", help="Begin at this height", action='store_true')
+    args = parser.parse_args()
+
+    PRETTYPRINT = args.prettyprint
+    JUXTAPOSE = args.juxtapose
     
-    # setup
-    args = cli()
-    
-    # create app
-    app = App()
-    app.init()
-    
-    # process loop
-    height = args.height # first time
-    while not app.shutdown:
-        try:
-            # build boxes, tokens tables
-            height = asyncio.run(app.process(args, height))
-
-            ##
-            ## PLUGINS
-            ##            
-
-            # UTXOS - process first; builds utxos table
-            if PLUGINS.utxo:
-                logger.warning('PLUGIN: Utxo...')
-                # call last_height-1 as node info returns currently in progress block height, and plugin needs to process the previous block
-                asyncio.run(utxo.process(is_plugin=True, args=args))
-
-            # PRICES - builds prices table
-            if PLUGINS.prices:
-                logger.warning('PLUGIN: Prices...')
-                asyncio.run(prices.process(is_plugin=True, args=args))
-
-            # STAKING
-            if PLUGINS.staking:
-                logger.warning('PLUGIN: Staking...')
-                sql = f'''
-                    select height 
-                    from audit_log 
-                    where service = 'staking'
-                    order by created_at desc 
-                    limit 1
-                '''
-                res = eng.execute(sql).fetchone()
-                last_staking_block = 0  
-                if res is not None: 
-                    logger.info('Existing staking info found...')
-                    last_staking_block = res['height']
-                else:
-                    logger.info('No staking info found; rebuiding from height 0...')
-                use_checkpoint = last_staking_block == height
-                logger.debug('Sync main and staking plugin...')
-                asyncio.run(staking.process(last_staking_block, use_checkpoint=use_checkpoint))
-
-            # quit or wait for next block
-            if args.once:
-                app.stop()
-                try: sys.exit(0)
-                except SystemExit: os._exit(0)            
-            else:
-                asyncio.run(app.hibernate(height))
-
-        except KeyboardInterrupt:
-            logger.debug('Interrupted.')
-            app.stop()
-            try: sys.exit(0)
-            except SystemExit: os._exit(0)            
-
-        except Exception as e:
-            logger.error(f'ERR: {myself()}, {e}')
-
-    # fin
-    app.stop()
-    try: sys.exit(0)
-    except SystemExit: os._exit(0)            
-
+    res = asyncio.run(main(args))
+#endregion MAIN

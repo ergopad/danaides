@@ -103,7 +103,7 @@ async def find_tokens(transactions: dict, tokens: dict, height: int = -1) -> dic
         return {}
 
 # upsert current chunk
-async def checkpoint(height, tokens, tokens_tablename='tokens_alt'):
+async def checkpoint(height, tokens, tokens_tablename='tokens'):
     df = pd.DataFrame.from_dict({
         'token_id': list(tokens.keys()), 
         'height': [n['height'] for n in tokens.values()], 
@@ -146,7 +146,7 @@ async def process(args, t):
     tokens = {}
     last_height = -1
     # tokens_tablename = ''.join([i for i in args.juxtapose if i.isalpha()]) # only-alpha tablename
-    tokens_tablename = 'tokens_alt'
+    tokens_tablename = 'tokens'
 
     # begin at blockchain height from cli
     if args.height >= 0:

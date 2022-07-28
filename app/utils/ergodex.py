@@ -207,7 +207,7 @@ def getErgodexPoolBox():
                 , t.token_name as name	
                 , t.decimals
             from u
-                join tokens_alt t on t.token_id = u.token_id
+                join tokens t on t.token_id = u.token_id
             -- use latest height
             where u.r = 1 
         '''

@@ -1,6 +1,6 @@
 # Danaides Lite Paper 
 V0.1.0 – Initial Functions and Build Litepaper
-
+_Note_ - below information is largely from a template and only used as a placeholder until it can be replaced in analogous form
 ## Abstract
 Danaides is an efficient, and performant version of the Ergo Blockchain's currnt unspent state.  UTXO blockchains store all transactions, as a financial ledger balance application would.  The sum of all the transactions is how amounts are determined, however to know the value of the current state of all outstanding transactions, only the unspent boxes are necessary.  The spent boxes are valueable for extended analysis and other reasons, and this takes more space and resources.  Focusing on the unspent transactions only limits what is needed in the database and performs optimally.
 

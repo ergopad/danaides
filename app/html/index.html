@@ -1,0 +1,24 @@
+<html>
+    <head>
+        <style>
+            body, p {font-family: Arial, Helvetica, sans-serif}
+        </style>
+        <script>
+            function burn() {
+                token = document.getElementById("burn").elements["token"].value;
+                amount = document.getElementById("burn").elements["amount"].value;
+                alert('Are you sure? Burn '+ amount + ' token(s), ' + token)
+            }
+        </script>
+    </head>
+    <body>
+        <h1>Burn Tokens</h1>
+        <form id=burn>
+            <table>
+                <tr><td align=right>Token ID:</td><td><input name=token type=text></td><td></td></tr>
+                <tr><td align=right>Amount:</td><td><input name=amount type=number></td><td>(int, no decimals; i.e. use 100 to burn 1 token with 2 decimals)</td></tr>
+                <tr><td align=right></td><td><input value=Burn type=button onclick="burn();"></td><td></td></tr>
+            </table>
+        </form>
+    </body>
+</html>

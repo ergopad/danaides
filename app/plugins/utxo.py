@@ -13,6 +13,7 @@ from ergo_python_appkit.appkit import ErgoValue
 
 #region INIT
 PRETTYPRINT = False
+LINELEN = 100
 VERBOSE = False
 NERGS2ERGS = 10**9
 UPDATE_INTERVAL = 100 # update progress display every X blocks
@@ -281,6 +282,11 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
         t = Timer()
         t.start()
 
+        # handle globals when process called from as plugin
+        if is_plugin:
+            if args.prettyprint:
+                PRETTYPRINT = True
+
         # cleanup tablename
         boxes_tablename = ''.join([i for i in args.juxtapose if i.isalpha()]) # only-alpha tablename
 
@@ -300,7 +306,7 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
         last_r = 1
 
         # process all new, unspent boxes
-        logger.info(f'Begin processing, {box_count} boxes total...')
+        logger.info(f'BOXES: {box_count} boxes found...')
         for r in range(last_r-1, box_count, CHECKPOINT_INTERVAL):
             try:
                 # the node can sometimes get overwhelmed; in the event, retry
@@ -315,8 +321,8 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                     if next_r > box_count:
                         next_r = box_count
 
-                    suffix = f'''{t.split()} :: ({utxo_counter}) Process ...'''+(' '*20)
-                    if PRETTYPRINT: printProgressBar(r, box_count, prefix='Progress:', suffix=suffix, length=50)
+                    suffix = f'''{t.split()} :: ({next_r} boxes) Process ...'''                    
+                    if PRETTYPRINT: printProgressBar(r, box_count, prefix=t.split(), suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
                     else: logger.debug(suffix)
 
                     utxos = {}
@@ -336,7 +342,7 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
 
                     # fetch box info
                     for ergo_tree, box_id, box_assets, registers, nergs, creation_height, transaction_id, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[2]['value'], u[2]['creationHeight'], u[2]['transactionId'], u[1]] for u in utxo if u[0] == 200]:
-                        logger.warning(box_id)
+                        if VERBOSE: logger.warning(f'box_id: {box_id}')
                         try:
                             # track largest height processed
                             if max_height < height:
@@ -366,8 +372,8 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                             pass
 
                     # save current unspent to sql
-                    suffix = f'{t.split()} :: ({utxo_counter}) Checkpoint...'+(' '*20)
-                    if PRETTYPRINT: printProgressBar(next_r, box_count, prefix='Progress:', suffix=suffix, length=50)
+                    suffix = f'{utxo_counter} :: Checkpoint...'
+                    if PRETTYPRINT: printProgressBar(next_r, box_count, prefix=t.split(), suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
                     else: logger.info(suffix)
                     await checkpoint(utxos)
 

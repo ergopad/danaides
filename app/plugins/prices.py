@@ -19,6 +19,10 @@ async def process(is_plugin=False, args=None) -> int:
         t = Timer()
         t.start()
 
+        # handle globals when process called from as plugin
+        if is_plugin and args.prettyprint:
+            PRETTYPRINT = True
+
         # ergodex tokens
         boxes = getErgodexPoolBox() # boxes = list(map(explorerToErgoBox, res["items"]))        
         if VERBOSE: logger.debug(f'{len(boxes)} boxes')
