@@ -7,7 +7,7 @@ from utils.db import eng, text, dnp
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, NODE_URL, NODE_APIKEY
 from utils.aioreq import get_json_ordered
-from plugins import staking, prices, utxo, token
+from plugins import prices, utxo, token
 from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 #region INIT
