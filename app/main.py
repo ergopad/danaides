@@ -3,7 +3,7 @@ import os, sys, time, signal
 import pandas as pd
 import argparse
 
-from utils.db import eng, text
+from utils.db import eng, text, dnp
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, NODE_URL, NODE_APIKEY
 from utils.aioreq import get_json_ordered
@@ -313,49 +313,60 @@ class App:
         return res['current_height']
 
     # wait for new height
-    async def hibernate(self, last_height):
-        current_height = last_height
-        infinity_counter = 0
-        t = Timer()
-        t.start()
+    def hibernate(self, last_height):
+        try:
+            current_height = last_height
+            infinity_counter = 0
+            t = Timer()
+            t.start()
 
-        # admin overview
-        sql = f'''
-                  select count(*) as i, 0 as j, 'staking' as tbl from staking
-            union select count(*), 0, 'vesting' from vesting
-			union select count(*), max(height), 'utxos' from utxos
-            union select count(*), max(height), 'boxes' from boxes
-            union select count(*), max(height), 'tokens' from tokens
-        '''
-        with eng.begin() as con:
-            res = con.execute(sql) 
-        logger.warning('\n'.join([f'''main.hibernate:: {r['tbl']}: {r['i']} rows, {r['j']} height''' for r in res]))
+            # admin overview
+            sql = f'''
+                      select count(distinct address) as i, 0 as j,      'staking' as tbl from staking
+                union select count(distinct address),      0,           'vesting'        from vesting
+                union select count(*),                     max(height), 'utxos'          from utxos
+                union select count(*),                     max(height), 'boxes'          from boxes
+                union select count(*),                     max(height), 'tokens'         from tokens
+            '''
+            with eng.begin() as con:
+                res = con.execute(sql) 
+            logger.warning('\n\t'+'\n\t'.join([f'''main.hibernate:: {r['tbl']}: {r['i']} rows, {r['j']} height''' for r in res]))
 
-        # chill for next block
-        logger.info('Waiting for next block...')
-        while last_height == current_height:
-            inf = get_node_info()
-            current_height = inf['fullHeight']
+            # chill for next block
+            logger.info('Waiting for next block...')
+            while last_height == current_height:
+                try:
+                    inf = get_node_info()
+                    current_height = inf['fullHeight']
 
-            if PRETTYPRINT: 
-                print(f'''\r({current_height}) {t.split()} Waiting for next block{'.'*(infinity_counter%4)}    ''', end = "\r")
-                infinity_counter += 1
+                    if PRETTYPRINT: 
+                        print(f'''\r({current_height}) {t.split()} Waiting for next block{'.'*(infinity_counter%4)}    ''', end = "\r")
+                        infinity_counter += 1
 
-            time.sleep(1)
+                    time.sleep(1)
 
-        # cleanup audit log
-        logger.debug('Cleanup audit log...')
-        sql = f'''
-            delete 
-            -- select *
-            from audit_log 
-            where created_at < now() - interval '3 days';            
-        '''
-        with eng.begin() as con:
-            con.execute(sql)
+                except KeyboardInterrupt:
+                    logger.debug('Interrupted.')
+                    last_height = -1
+                    try: sys.exit(0)
+                    except SystemExit: os._exit(0)
 
-        sec = t.stop()
-        logger.log(LEIF, f'Block took {sec:0.4f}s...')        
+            # cleanup audit log
+            logger.debug('Cleanup audit log...')
+            sql = f'''
+                delete 
+                -- select *
+                from audit_log 
+                where created_at < now() - interval '3 days';            
+            '''
+            with eng.begin() as con:
+                con.execute(sql)
+
+            sec = t.stop()
+            logger.log(LEIF, f'Block took {sec:0.4f}s...')        
+
+        except Exception as e:
+            logger.error(f'ERR: {myself()}, {e}')
 
 # handle command line interface directives
 def cli():
@@ -410,8 +421,14 @@ if __name__ == '__main__':
             # build boxes, tokens tables
             height = asyncio.run(app.process(args, height))
 
+            ## -----------
+            ## - PLUGINS -
+            ## -----------
             ##
-            ## PLUGINS
+            ## These calls create a current view of all blockchain unspent transactions.
+            ##
+            ## Some tables can be updated incrementally, which is very quick; others are built from views in a way that the
+            ##   update process does not block api queries, and the result table is very performant.
             ##            
 
             # UTXOS - process first; builds utxos table
@@ -425,10 +442,11 @@ if __name__ == '__main__':
                 logger.warning('main:: PLUGIN: Prices...')
                 asyncio.run(prices.process(is_plugin=True, args=args))
 
-            # STAKING
-            if PLUGINS.staking:
-                logger.warning('main:: PLUGIN: Staking...')
-                asyncio.run(staking.process(is_plugin=True, args=args))
+            # DROP-N-POP
+            for tbl in ['staking', 'vesting', 'assets', 'balances']:
+                logger.info(f'main:: {tbl.upper()}...')
+                res = asyncio.run(dnp(tbl))
+                logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count']} rows)''')
 
             # quit or wait for next block
             if args.once:
@@ -436,7 +454,7 @@ if __name__ == '__main__':
                 try: sys.exit(0)
                 except SystemExit: os._exit(0)            
             else:
-                asyncio.run(app.hibernate(height))
+                app.hibernate(height)
 
         except KeyboardInterrupt:
             logger.debug('Interrupted.')

@@ -6,6 +6,7 @@ from os import getpid
 from pydantic import BaseModel
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from utils.db import eng
 
 # from api.v1.routes.users import users_router
 # from api.v1.routes.auth import auth_router
@@ -56,12 +57,14 @@ async def add_logging_and_process_time(req: Request, call_next):
 async def ping():
     return {"hello": "world"}
 
-class burn_token(BaseModel):
+class token(BaseModel):
     id: str
+    name: str = ''
+    decimals: int = 0
     amount: int = 0
 
 @app.post("/api/burn/")
-async def burn(token: burn_token):
+async def burn(token: token):
     # check is valid token
     logging.debug(f'burning token: {token.id}')
 
@@ -73,6 +76,22 @@ async def burn(token: burn_token):
 
     # try to sign/submit
     return {"tx": tx}
+
+@app.post("/api/snapshot/")
+async def burn(token: token):
+    return {}
+
+@app.post("/api/balances/")
+async def assets(addresses):
+    sql = f'''
+        select address, sum(nergs)/power(10, 9) as ergs
+        from balances 
+        where address in ({','.join([a for a in addresses])})
+        group by address
+    '''
+    with eng.begin() as con:
+        res = con.execute(sql).fetchall
+    return res
 
 # MAIN
 if __name__ == "__main__":
