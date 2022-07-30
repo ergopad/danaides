@@ -1,4 +1,4 @@
-create view v_assets as 
+create or replace view v_assets as 
 	with a as (
 		select 
 			address

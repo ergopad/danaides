@@ -1,4 +1,4 @@
-create view v_staking as
+create or replace view v_staking as
 	with 
 	ergopad as (
 		select
@@ -86,3 +86,4 @@ create view v_staking as
 	from egio u
 		join a on a.token_id = u.stakekey_token_id
 	where proxy = 1
+;

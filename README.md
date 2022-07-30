@@ -9,8 +9,10 @@
 
 ## SQL
 ```sql
--- allow hstore columns
-create extension hstore;
+-- should run this manually
+create database danaides;
+-- allow hstore columns; only need this once
+create extension if not exists hstore;
 ```
 
 ### Objects

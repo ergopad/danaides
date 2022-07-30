@@ -1,4 +1,4 @@
-create view v_audit_stats as
+create or replace view v_audit_stats as
 	with ss as (
 		select created_at
 			, lag(created_at) over(order by created_at) as prev
@@ -14,3 +14,4 @@ create view v_audit_stats as
 	where created_at is not null
 		-- and service = 'boxes'
 	group by service
+;

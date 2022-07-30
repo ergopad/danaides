@@ -1,5 +1,4 @@
--- drop view tokenomics
-create view tokenomics as
+create or replace view tokenomics as
 	with k as (
 		select vested
 			, emitted
@@ -23,3 +22,4 @@ create view tokenomics as
 	from tokens t
 		join k on k.token_id = t.token_id
 	where t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
+;

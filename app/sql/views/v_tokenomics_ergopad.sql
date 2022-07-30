@@ -1,5 +1,4 @@
--- drop view tokenomics_ergopad
-create view tokenomics_ergopad as
+create or replace view tokenomics_ergopad as
 	with 
 	-- vested
 	vested as (
@@ -46,3 +45,4 @@ create view tokenomics_ergopad as
 		, (select sum(token_amount) from emitted)::decimal(32, 10) as emitted -- 1375
 		, (select sum(amount) from staked)::decimal(32, 10) as staked -- 60423356.210000046
 		, (select sum(amount) from stake_pool)::decimal(32, 10) as stake_pool -- 27851650278
+;

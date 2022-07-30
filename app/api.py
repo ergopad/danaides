@@ -6,6 +6,7 @@ from os import getpid
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from utils.db import eng
+from config import init_db
 
 from routes.dashboard import dashboard_router
 from routes.snapshot import snapshot_router
@@ -37,6 +38,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 @app.middleware("http")
 async def add_logging_and_process_time(req: Request, call_next):

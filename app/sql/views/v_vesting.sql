@@ -1,4 +1,4 @@
-create view v_vesting as
+create or replace view v_vesting as
 	with v as (
 		select id 
 			, ergo_tree
