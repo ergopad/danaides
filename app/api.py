@@ -3,13 +3,13 @@ import logging
 
 from time import time
 from os import getpid
-from pydantic import BaseModel
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from utils.db import eng
 
-# from api.v1.routes.users import users_router
-# from api.v1.routes.auth import auth_router
+from routes.dashboard import dashboard_router
+from routes.snapshot import snapshot_router
+from routes.token import token_router
 
 app = FastAPI(
     title="Danaides",
@@ -18,8 +18,9 @@ app = FastAPI(
 )
 
 #region Routers
-# app.include_router(users_router,        prefix="/api/users",         tags=["users"], dependencies=[Depends(get_current_active_user)])
-# app.include_router(auth_router,         prefix="/api/auth",          tags=["auth"])
+app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"]) #, dependencies=[Depends(get_current_active_user)])
+app.include_router(snapshot_router, prefix="/api/snapshot", tags=["snapshot"])
+app.include_router(token_router, prefix="/api/token", tags=["token"])
 #endregion Routers
 
 # origins = ["*"]
@@ -56,42 +57,6 @@ async def add_logging_and_process_time(req: Request, call_next):
 @app.get("/api/ping")
 async def ping():
     return {"hello": "world"}
-
-class token(BaseModel):
-    id: str
-    name: str = ''
-    decimals: int = 0
-    amount: int = 0
-
-@app.post("/api/burn/")
-async def burn(token: token):
-    # check is valid token
-    logging.debug(f'burning token: {token.id}')
-
-    # build tx
-    tx = {
-        'hello': 'world'
-    }
-    logging.debug(f'transaction: {tx}')
-
-    # try to sign/submit
-    return {"tx": tx}
-
-@app.post("/api/snapshot/")
-async def burn(token: token):
-    return {}
-
-@app.post("/api/balances/")
-async def assets(addresses):
-    sql = f'''
-        select address, sum(nergs)/power(10, 9) as ergs
-        from balances 
-        where address in ({','.join([a for a in addresses])})
-        group by address
-    '''
-    with eng.begin() as con:
-        res = con.execute(sql).fetchall
-    return res
 
 # MAIN
 if __name__ == "__main__":
