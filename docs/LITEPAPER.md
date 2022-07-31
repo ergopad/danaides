@@ -5,112 +5,49 @@ _Note_ - below information is largely from a template and only used as a placeho
 Danaides is an efficient, and performant version of the Ergo Blockchain's currnt unspent state.  UTXO blockchains store all transactions, as a financial ledger balance application would.  The sum of all the transactions is how amounts are determined, however to know the value of the current state of all outstanding transactions, only the unspent boxes are necessary.  The spent boxes are valueable for extended analysis and other reasons, and this takes more space and resources.  Focusing on the unspent transactions only limits what is needed in the database and performs optimally.
 
 ## Introduction
-We live in a multi-token world. Bitcoin, Ether, Ripple, Iota and EOS are all examples of major digital currencies in the marketplace that exist across separate blockchains. Currently, such digital currencies can only be exchanged in traditional centralized exchanges, through costly and slow atomic swaps, or in the case of ERC20 tokens, on decentralized ERC20 token exchanges. However, a decentralized network permitting the fast and inexpensive exchange of assets across different blockchains, such as the direct peer-to-peer exchange of Bitcoin for Ether, has not yet been created. In addition, thousands of legitimate tokens, each with their own unique use cases and value proposition, are effectively excluded from market because they are not listed on any exchange, greatly limiting their adoption and utility. Moreover, slow transaction speeds, volatility, and hefty fees are impeding cryptocurrencies from functioning as an everyday unit of exchange. The ability to transact value from every single blockchain on a single decentralized network will prove extremely useful in solving these problems. Danaides is that solution. 
+
 
 ### Background
-Cryptocurrencies such as Bitcoin and Ethereum have recently got so much press that there is no need to introduce to the concepts of blockchain and cryptocurrencies. The price of Bitcoin has seen phenomenal growth, and attention of public and institutional investors have significantly increased the potential of using top cryptocurrencies as a long-term store of value. Additionally, the open sourced nature of blockchain and cryptocurrency technology is widely experimental with hundreds of different coins and distributed ledgers on the market. As long as bad actors are driven from the space, we view the pace of innovation and proliferation of utility tokens as a net positive. However, the dynamism of innovation is often at odds with the real-world limitations of the adopting markets, such as those imposed by centralized exchanges. Moreover, the existing solutions, such as Ethereum based decentralized exchanges, do nothing to address the urgent problem of interoperability, or cross-chain transactions. Finally, unless the problems of scalability and volatility are addressed, cryptocurrencies may never be used as a medium of exchange. Danaides seeks to solve all of these problems and more.
 
-### The problem with centralized exchanges
-Blockchain and cryptocurrencies were supposed to provide a trustless decentralized means for peer-to-peer transactions. However, in reality, a majority of cryptocurrencies are held and transacted through a few large entities and centralized exchanges. The current situation is far from the promised world of decentralized transactions and community owned currencies, and is more akin to the traditional, but less effective banking system, with accompanying scalability issues and expensive transaction fees. There is clearly a need for a decentralized exchange where one can contribute to the system with no need to trust or rely on centralized entities. In our view, this is one of the biggest failures of cryptocurrencies, and the need to address this problem is keenly felt by the community.  
 
-The problems with centralized exchanges have been well documented. First and foremost is the issue of trust. Users entrust their private keys to centralized entities, such that if the exchange is hacked or goes down, users' funds are at risk. Second, as for-profit entities, centralized exchanges often charge high transactions fees to their users. Third, centralized exchanges effectively act as walled gardens, greatly limiting the number of projects who wish to list their digital asset on the exchange, and exacting exorbitant costs for the right to list a digital asset. The result is that early adopters of nascent cryptocurrency projects effectively have no means of exchanging their tokens. It seems we have returned to a system where centralized gatekeepers wield most of the power, increasing the risk that that only a few projects will survive and resulting in the death of the majority of innovations.  
+### The problem with blockchain data
+ 
 
-In sum, old-fashioned centralized exchanges, which are trust-based businesses, facilitate the exchange of crypto-currencies based on traditional centralized and fee-based business structures. Currently, there is a lack of organic solutions for communities to support their decentralized technologies. Instead, they need to rely on centralized exchanges to adopt their technologies before users can buy into their platform, or look to the existing suite of decentralized exchanges, all of which have significant shortcomings.  
+### The problem with existing current blockchain tools
 
-### The problem with existing decentralized exchanges
-2018 has often been hailed as the "year of the DEX". And while many decentralized exchanges have begun operating in 2018, none have credibly solved the fundamental problem of interoperability. For instance, most of the existing solutions run on top of the Ethereum network, meaning they use smart contracts and payment channels to facilitate exchange, however they are limited in that they only support ERC20 tokens. While cross-chain solutions have been proposed, such as atomic swaps, these are limited in terms of speed and scalability, as the swap is constrained by the speed of its slowest network. It is a problem that in 2018 users still cannot engage in a near-instant and inexpensive peer-to-peer exchange of Bitcoin and Ether. The inability to quickly engage in cross-chain transactions is a massive impediment to the widespread use of decentralized exchanges and to the transaction of cryptocurrencies for everyday use.  
 
-### The problem with ERC-20 tokens
-We are strong supporters of the Ethereum Project. However, there are particular issues with the ERC-20 standard that must be solved if cryptocurrencies are to be adopted for everyday use. First, Ethereum's current transaction rate too slow. Second, the ERC-20 standard is susceptible to bugs and user mistakes. Such bugs have led to hundreds of thousands of dollars in monetary losses. Third, ERC-20 Tokens are not first-class citizens of the Ethereum network. Instead, they are generated using a specific type of smart contract that manages massive hash-maps that maps every address to its balance. This is one of the primary reasons that the transactions on ERC-20 tokens are not scalable. 
+### Addressing Scalability and Performance 
 
-### Issues with Scalability and Volatility Preclude the Use of Bitcoin as a Medium of Exchange 
-Bitcoin is a good store of value, but not a good currency. For something to achieve status as a currency, it must be a store of value, unit of account, and medium of exchange. Bitcoin and a few other major cryptocurrencies have established themselves as a good store of value and unit of account. This is great for the world of cryptocurrencies but is insufficient for cryptocurrency to become mainstream. For cryptocurrencies to be used as an everyday medium of exchange, they must solve the issues of scalability and fees.  
 
-We can think of Bitcoin as digital gold. The scarcity of gold has made it a global store of value that can be used to back the value of other assets, however gold cannot be practically used in day-to-day transactions. Although it is possible to conceive a world in which people buy their morning coffee by passing a miniscule particle of gold to the barista, it is not a probable outcome. Moreover, the price volatility of Bitcoin dissuades most from transacting with it. Until the problems of scalability and volatility are solved, Bitcoin will never be more than a store of value. We believe these issues constitute nothing less than an existential threat to the entire cryptocurrency ecosystem, and the need to address them cannot be overstated.  
+# Our Solution: Danaides
 
-# Our Solution: The Danaides
-At its core, Danaides is a decentralized exchange and transaction network. By utilizing existing and novel technologies, Danaides allows users to represent other digital assets in cryptographically secure ways. Ferrum can then be used as a medium of exchange for other digital assets. We propose a protocol called Ferrum and its implemented cryptocurrency proxy called Fe. The value of every Fe is pegged to another cryptocurrency, and it can be imported or exported in relation to the underlying cryptocurrencies it represents. For example, users can convert their Bitcoins to a Fe equivalent, and execute countless fast transactions on the Danaides with minimal costs, thereby avoiding the slow transaction speeds and high fees experienced in the Bitcoin network. Users can then convert their Fe back to any other originating cryptocurrency supported by the Danaides. We propose an implementation of Ferrum based on a directed acyclic graph (DAG) ledger, as graph-based decentralized systems have some inherent benefits over traditional blockchain systems, such as near costless transactions and improved scalability. We utilize new concepts such Proof of Burn, External Proof, Futures, Decentralized Cops and Adversaries to enable this cross-chain exchange. Danaides runs on its native token, the Ferrum PUR token. As a utility token, the PUR token can be used to increase the speed of transactions, import and export value to and from the Network, build dApps, and issue new tokens.  
 
-## The Danaides overview
-Danaides is a DAG-based system designed to achieve the following functions: a fast and inexpensive settlement layer for decentralized exchange platforms; a mechanism for importing and exporting value from other networks; a platform for launching tokens; a payment solution for the everyday use of cryptocurrencies; and a protocol for tokenizing fiat currencies, among other functions in early development.
+## Danaides Overview
 
-### The network: Decentralized Directed Acyclic Graph 
-Bitcoin was the first widely known decentralized cryptocurrency. In his whitepaper, Satoshi Nakamoto set forth his vision for the cryptocurrency Bitcoin, and presented a secure mechanism which became known as blockchain for storing transactions. Blockchain is a Merkle Hash Tree that is pruned into a Merkle Hash linked list by competing miners. Figure 1 (a) shows a blockchain where blocks are linked together. 
-There is another method of implementing decentralized ledgers by decentralized network, known as a DAG based network. DAG is short for Directed Acyclic Graphs, which describes the data structure that represents transactions in these networks. Figure 1(b) illustrates transactions in a DAG based network. 
 
-![](https://github.com/naiemk/litepaper/raw/master/fig1.png)
+### The components: Docker, Ergonode and Postgres  
 
-Figure 1 Blockchain (a) versus DAG (b) 
 
-Ferrum's DAG-based cryptocurrency network works similar to IOTA at its core. The transactions issued by nodes constitute a graph, which is the ledger for storing transactions. When a new transaction arrives, it selects two other transaction to approve. These approvals are represented by directed edges, as shown in Figure 1 (b). By following the approval path of the transactions, eventually we reach the first transaction that initiates the graph. The origin transaction does not necessarily issue any tokens. However, one of the breakthroughs of the Danaides is that it allows the issuance of token backed by external networks or originated in the Danaides.  
+### Value Unspent-Only solution 
 
-### Value Import / Export Mechanism and external exchange transactions 
-One of Ferrum's unique value propositions is its ability to securely import value from outside networks/blockchains, and then securely export it back to its original networks/blockchains. This is achieved in part through the use of proxy tokens. Proxy tokens in Ferrum are guaranteed to have the same value of their backing tokens.
 
-One can think of BTC as cash, and Fe(BTC) as certified bank checks. Users can go to bank and lock their cash, bank gives them certified checks that are effectively the same as cash. Market forces would not change the value of certified check compared to cash, because any time people want to acquire large number of certified checks, they can go to the bank and bank creates as much certified check as there is locked cash. If many people decide to acquire back cash, they can go to bank, and bank destroys the certified check and unlocks the cash. As long as there is enough cash in the safe for every certified check produced there would not be a divergence in the value of certified check versus cash. 
+### Interfaces: API and Console
 
-In above example, it is very important for the bank to secure its safe. If a thief steals the safe, then there is suddenly some amount of certified check that is not backed by cash. This is why the security of value lock/unlock techniques is of paramount importance. 
-
-Ferrum can also represent proxy tokens other than Fe(BTC). The technology that provides security guarantees for importing value is non-trivial. We have developed several techniques that provide various types of guarantee and are suitable for external networks with different characteristics while ensuring the security.  
-
-### Native tokens
-In addition to the proxy tokens, Danaides has native tokens such as Fe(PUR), Ferrum's utility token, and other tokens that network users or dApps can create (similar to ERC-20 tokens). Moreover, Ferrum’s proxy tokens and native tokens can interact within the Danaides and where they can be exchanged or used in transactions. 
-
-### External exchanges: Exchange X for Fe(X)
-It is important to note that most day-to-day users will never need to lock or unlock values in the external networks to acquire Ferrum proxy tokens. There is a much simpler and faster method available to users in the Danaides to exchange X for Fe(X). For example, a user can exchange BTC with Fe(BTC) using the external exchange protocol. This is as simple as sending BTC to a Fe(BTC) holder and receiving Fe(BTC) from them. Danaides has built-in solutions to allow this exchange without counterparty risk.
 
 ## Danaides Features
 
-### Fast decentralized exchange 
-Most crypto asset exchanges today are traditional centralized exchanges. A centralized exchange works by holding user assets in their data sources. The primary concern with centralized exchanges are that users have to trust exchanges with their assets, and historically there have been several high-profile hacks resulting in significant and often unrecoverable monetary losses. Decentralized exchanges, on the other hand, eliminate the counter party risk because they do not hold user’s assets. Such decentralized exchanges do not hold user’s assets. It matches the bidder and asker, and transactions are then settled on the decentralized network.  
+### Performance for Common Needs
 
-Danaides can function as the highway fueling decentralized exchanges by functioning as their settlement layer. We have built exchange transactions without counterparty risk as the first-class citizen of the Danaides. Although Danaides only recently began development, users of the test net can already exchange Bitcoin and Ethereum peer-to-peer using Ferrum's mobile wallets over Ferrum's decentralized network and can do so on a fast and inexpensive basis. As more networks securely plug-in to the Danaides, users will be able to directly exchange any variety of tokens, from ERC-20 tokens, to tokens generated on the NEO network, the QTUM network, the Wanchain network, etc., and with established tokens that exist on their own blockchains, such as XRP and LTC. In other words, Ferrum is blockchain agnostic, and can be used to exchange any digital asset as long as its host network is securely plugged-in to Danaides. Danaides is built from ground up for this purpose, and the DAG protocol is designed such that these transactions can be executed in a fast, scalable and cost-effective manner when compared to the existing solutions. To facilitate the simple exchange of thousands of tokens in a scalable and inexpensive manner, Danaides is dedicated to building a first-rate user experience, such that any user can easily and intuitively exchange tokens peer-to-peer over Ferrum's decentralized network.
+### Snapshots
 
-### Token platform
-Currently the Ethereum network is used for issuing ERC-20 tokens. ERC-20 Tokens are not first-class citizens of the Ethereum network. Instead, they are generated using a specific type of smart contract that manages gigantic hash-maps. This is one of the primary reasons that transactions with ERC-20 tokens are not scalable. 
 
-Ferrum is designed to allow developers to create new tokens that can be transacted and exchanged in a scalable manner. As explained below, Fe(BTC) or Fe(ETH) are tokens that are backed by external value. In Ferrum, we introduce a new type of transaction, which we call the Genesis Transaction. The Genesis Transaction issues a new set of tokens that are not backed by anything. A Genesis Transaction has the following extra fields: Number of tokens and Is Open Ended. The Genesis Transaction can be created by a smart contract or a normal account. The creator of an open-ended Genesis Transaction can create more Genesis Transactions. The only account able to spend from the Genesis Transaction is the originator, being a normal account or a smart contract.  
+# Burn/Mint Tokens
 
-As Danaides continues to develop, it will be built to allow developers to issue their own native tokens, which can be recognized and transacted similarly to other native or imported tokens in the Danaides.
+## Staking/Vesting Insight
 
-# Ferrum Products 
-Ferrum is designed from the ground up to support tokens that represent external assets. It provides mechanisms to secure the transfer of assets from other networks. In addition to crypto assets, it can represent real-world assets such as fiat currencies. 
+## Open-source 
 
-## Payment solutions 
-Danaides envisions a day in which merchants and consumers can transact in cryptocurrencies for every day purchases over the Danaides. To this end, Danaides is a building a decentralized payment solution. Using the Danaides, merchants and services will be able to accept and seamlessly transact with any cryptocurrency in a fast and scalable manner. For instance, by creating a proxy BTC on the Danaides, consumers will be able to quickly and cheaply purchase a cup of coffee, which would not otherwise be possible using the Bitcoin network due to its relatively slow transaction times and high fees.  
-
-Danaides recognizes that to achieve the vision of cryptocurrencies being used as an everyday medium of exchange, it will require considerable marketing resources to bring merchants into the Danaides family. For this reason, Danaides intends to dedicate a significant portion of its time and funds to developing a robust and effective marketing strategy in order to bring about a world where cryptocurrencies are transacted for everyday use.  
-
-## Open-source decentralized exchange
-Today, decentralized exchanges are far from ideal when it comes to end consumers. We believe the user friendliness, and security features of decentralized exchange applications is of extreme importance. There are many high-profile hacks of decentralized exchanges such as Etherdelta that have been mainly due to low quality exchange applications.  
-
-We are working on building a secure and fast open sourced decentralized exchange application with state of the art security features. This project will be available to public with a permissive license with the goal of raising the bar for security and user friendliness of decentralized exchanges. 
-
-# Ferrum Advanced Features
-Danaides was designed with the following vision in mind: to be the first network to facilitate the seamless transaction and exchange of both cryptocurrencies and fiat currencies and to remove the barriers that have impeded the use of cryptocurrencies for everyday transactions.  In other words, Danaides is dedicated to bringing the world of cryptocurrencies to the masses and is developing the following protocols in order to achieve that vision: tokenizing fiat currencies, low latency transactions, dApps, and sub networks.  
-
-Although Ferrum's advanced features are major parts of our vision, they will only be launched in the test-net for a period of time and will slowly be adopted on the main-net after battle testing all the technical and legal details. 
-
-## Tokenizing fiat
-The protocols that allows Danaides to see across networks is simple enough that is not specifically bound to cryptocurrencies. An entity holding fiat currencies may as well expose such protocols and allow generation of Fe(USD) and Fe(EUR) or any other currency in the world. Once fiat currencies are entered the Danaides, they can be freely transacted or exchanged by each other or any other crypto-currency.  
-
-For example, in a hypothetical scenario, an Australian financial institution can provide the following public interfaces to their bank account database, which would enable the generation of Fe (AUD): 1) a funding lock account number that has no owner, whereby any transactions sent to that account are not reversible; 2) the ability to users to expose their bank account numbers without the need to expose the account value; and 3) a public ledger that shows that the transactions happened between the exposed accounts. 
-
-Such an interface is enough to enable generation of Fe(AUD) in the Danaides without requiring trust to the financial institution. A decentralized database can create a duplicate record of the published transactions, thus removing the ability of the financial institution to modify the transaction history.  
-
-## The Ferrum dApp paradigm
-Danaides enables users to write their code using their favorite language, whether that be Python, Go, Java, etc., and package it with all the dependencies. They can use their existing tooling and programming knowledge to write a decentralized application (or dApp). This immediately increases the number of people who can contribute to the decentralized ecosystem. 
-
-Currently, a user can write an application, package it with dependencies and run it on one of the common cloud providers, such as Amazon (AWS), Microsoft (Azure), or Google Compute Cloud. They pay for the resources they use to the cloud providers. Danaides turns this model upside down by allowing users to present their compute resources to the Danaides. In other words, users can run decentralized applications and get paid for their resources in Fe(PUR). 
-
-We propose a flexible protocol that allows users to choose a trade-off between security and cost. Ferrum's decentralized application model is also scalable because the relationship between compute power required for the network and the scale of the network is linear. 
-
-## The Ferrum family of networks for scalability and specialization 
-Danaides is designed with flexibility, scalability and specialization in mind. Ferrum Side Networks can seamlessly interact with the main Danaides, while keeping their load off of the main network, thereby improving scalability and facilitating innovation and specialization.  
-
-In addition of scalability, Ferrum side networks allow for specialization of sub-networks. For example, a small nation state decides to adopt a digital currency, which they control completely, yet must interact with the external world. They can adopt a Ferrum spin-off for their economy and issue their currency without concern of being dependent on a network that they do not control. Another example is a spin-off that is adopted by a scientific community to experiment with and study Genome models. Such a network has specialized needs, such as memory and processor heavy smart contracts, or high bandwidth, and they may wish to limit submitting transactions on the network only to the members of the community. Such a sub-network can create a Ferrum spin-off for their specialized needs, yet be able to interact to the external world, sell their results, receive money, etc. through their connection to the main Danaides. 
-
-Although Danaides makes interaction between networks possible, the Ferrum spin-offs have a much tighter interaction, such that the movement of value and logic will be nearly seamless. One can think about the group of heterogeneous networks interacting with each other as countries with different currencies and strict borders, and the network of Ferrum colonies as the European Union, a collection of etworks with the same currency and seamless interaction, while each keep their own locality.
+# Dashboard
 
 # Roadmap 
 The roadmap will be released at a later time. 
@@ -119,7 +56,6 @@ The roadmap will be released at a later time.
 Danaides is comprised of the highly capable ErgoPad Dev Team, with experience ranging from development in various languanges, namely Python and Ergoscript, to Cloud Administration tasks.
 
 # Conclusion
-Danaides is a decentralized network of nodes that can process high throughput cross-chain transactions. Danaides uses a plug-in mechanism and a protocol to see across chains. Danaides also provides a set of specialized transactions that facilitate exchanges within the network, and across the network with external networks. In addition, Danaides users can import value from external networks, being other crypto-currencies or even fiat currencies. It allows the community to extend the network to import any form of value. Once value in imported in to the Danaides, it can be transacted and exchanged for minimal fees. Ferrum further provides mechanisms for users to export the value back to the original network. Moreover, Danaides provides a platform for users to generate their own tokens and build their own dApps.  In sum, Danaides aims to be the first decentralized network that can bring together the best of both fiat and cryptocurrency systems today and is very well equipped to bring fiat currencies into the digital realm.   
 
 
 

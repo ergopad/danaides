@@ -50,3 +50,8 @@ create extension if not exists hstore;
 - -P --prettyprint - conserve node requests and wait polling to single line (lf, without cr)
 - -B --override - process with just this box_id (use for testing)
 - -O --once - process once and complete (don't wait for next block)
+
+# Features In Progress
+- Burn/Mint Tokens
+- Integrate [Paideia Contracts](https://github.com/ergo-pad/paideia-contracts)
+- API routes for coommon requests (i.e. staking, vesting), that are currently only available via SQL
