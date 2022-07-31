@@ -3,6 +3,7 @@ import os, sys, time, signal
 import pandas as pd
 import argparse
 
+from config import dotdict
 from utils.db import eng, text, dnp
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, NODE_URL, NODE_APIKEY
@@ -11,12 +12,6 @@ from plugins import prices, utxo, token
 from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 #region INIT
-class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
-
 # GLOBALs
 PRETTYPRINT = False
 VERBOSE = False
@@ -446,7 +441,7 @@ if __name__ == '__main__':
             for tbl in ['staking', 'vesting', 'assets', 'balances']:
                 logger.info(f'main:: {tbl.upper()}...')
                 res = asyncio.run(dnp(tbl))
-                logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count']} rows)''')
+                logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
 
             # quit or wait for next block
             if args.once:

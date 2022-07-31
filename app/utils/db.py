@@ -1,7 +1,10 @@
-from sqlalchemy import create_engine, text
-from os import getenv
+from os import path, listdir
+from os import path, listdir, getenv
+from sqlalchemy import create_engine, inspect, text, MetaData, Table
 from utils.logger import logger, Timer, printProgressBar
-from config import TABLES
+from config import get_tables
+from string import ascii_uppercase, digits
+from random import choices
 
 # from dotenv import load_dotenv
 # load_dotenv()
@@ -17,39 +20,117 @@ async def dnp(tbl: str):
         if tbl not in ['staking', 'vesting', 'assets', 'balances']:
             return {'status': 'error', 'message': f'invalid request for table: "{tbl}"'}
 
-        sqlCreateTmp = f'''
-            create table tmp_{tbl} (
-                id serial not null primary key,
-                {','.join([f'{k} {v}' for k, v in TABLES[tbl].items()])}
-            );
-        '''
+        TABLES = get_tables(eng)
+        src = TABLES[tbl]
+        tmp_table = f'tmp_{tbl}'
+        eng._metadata = MetaData(bind=eng)
+        eng._metadata.reflect(eng)
+        tmp = Table(tbl, eng._metadata)
+        tmp.name = tmp_table
+        tmp.primary_key.name = f'''staking_pkey_{''.join(choices(ascii_uppercase+digits, k=10))}'''
+        cols = ','.join([n.name for n in tmp.columns if n.name != 'id'])
+
         sqlInsertTmp = f'''
-            insert into tmp_{tbl} ({','.join([k for k in TABLES[tbl].keys()])})
-                select {','.join([k for k in TABLES[tbl].keys()])}
+            insert into {tmp_table} ({cols})
+                select {cols}
                 from v_{tbl};
         '''
-        sqlDropTable = f'''
-            drop table if exists {tbl};
-        '''
-        sqlRenameTmp = f'''
-            alter table tmp_{tbl} rename to {tbl};
-        '''
         sqlRowCount = f'''
-            select count(*) as row_count 
+            select count(*) as rc
             from {tbl}
         '''
 
-        row_count = 0
+        rc = {
+            'before': 0,
+            'after': 0,
+        }
+        # starting row count
         with eng.begin() as con:
-            con.execute(sqlCreateTmp)
-            con.execute(sqlInsertTmp)
-            con.execute(sqlDropTable)
-            con.execute(sqlRenameTmp)
             res = con.execute(sqlRowCount).fetchone()
-            row_count = res['row_count']
+            rc['before'] = res['rc']
+            logger.warning(rc['before'])
+        
+        # check if tmp exists
+        if inspect(eng).has_table(tmp_table):
+            logger.warning(f'drop {tmp_table}')
+            tmp.drop()
 
-        return {'status': 'success', 'message': tbl, 'row_count': row_count}
+        # crate tmp
+        logger.warning(f'create {tmp_table}')
+        tmp.create()
+
+        # populate tmp
+        with eng.begin() as con:
+            logger.warning(f'insert into {tmp_table} from v_')
+            con.execute(sqlInsertTmp)
+        
+        # drop src
+        logger.warning(f'drop {tbl}')
+        src.drop()
+        
+        # rename tmp to src
+        with eng.begin() as con:
+            logger.warning(f'rename {tmp_table} to {tbl}')
+            con.execute(f'alter table {tmp_table} rename to {tbl};')
+
+        # final row count
+        with eng.begin() as con:
+            res = con.execute(sqlRowCount).fetchone()
+            rc['after'] = res['rc']
+            logger.warning(rc['after'])
+
+        return {
+            'status': 'success', 
+            'message': tbl, 
+            'row_count_before': rc['before'], 
+            'row_count_after': rc['after'],
+        }
 
     except Exception as e:
         logger.error(f'ERR: {e}')
         return {'status': 'error', 'message': f'ERR: dnp, {e}'}
+
+# create db objects if they don't exists
+async def init_db():
+    # if new db, make sure hstore extension exists
+    try:
+        sql = 'create extension if not exists hstore;'
+        with eng.begin() as con:
+            con.execute(sql)
+
+    except Exception as e:
+        logger.error(f'ERR: {e}')
+        pass
+
+    # build tables, if needed
+    try:
+        metadata_obj = MetaData(eng)
+        metadata_obj.create_all(eng)
+
+    except Exception as e:
+        logger.error(f'ERR: {e}')
+
+    # build views
+    try:
+        view_dir = '/app/sql/views'
+        with eng.begin() as con:
+            views = listdir(view_dir)
+            for v in views:
+                if v.startswith('v_') and v.endswith('.sql'):
+                    with open(path.join(view_dir, v), 'r') as f:
+                        sql = f.read()
+                    con.execute(sql)
+
+    except Exception as e:
+        logger.error(f'ERR: {e}')
+
+# create tmp version of table 
+async def build_tmp(tbl:str):
+    try:
+        TABLES = get_tables(eng)
+        tmp = TABLES[tbl]
+        tmp.name = f'tmp_{tbl}'
+        tmp.create() 
+        
+    except Exception as e:
+        logger.error(f'ERR: {e}')
