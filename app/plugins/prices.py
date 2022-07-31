@@ -1,7 +1,7 @@
 import asyncio
 import argparse
 
-from utils.logger import logger, Timer, printProgressBar
+from utils.logger import logger, Timer
 from utils.db import eng
 from utils.ergodex import getErgodexPoolBox, parseValidPools
 
@@ -14,10 +14,14 @@ POOL_SAMPLE = "1999030f0400040204020404040405feffffffffffffffff0105fefffffffffff
 
 #region FUNCTIONS 
 
-async def process() -> int:
+async def process(is_plugin=False, args=None) -> int:
     try:
         t = Timer()
         t.start()
+
+        # handle globals when process called from as plugin
+        if is_plugin and args.prettyprint:
+            PRETTYPRINT = True
 
         # ergodex tokens
         boxes = getErgodexPoolBox() # boxes = list(map(explorerToErgoBox, res["items"]))        

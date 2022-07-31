@@ -5,6 +5,9 @@ pydantic
 aiohttp
 pandas
 
+fastapi
+uvicorn
+
 sqlalchemy
 psycopg2-binary
 
