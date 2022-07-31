@@ -2,11 +2,9 @@ from requests import get
 from base58 import b58encode
 from os import getenv
 
-ERGOPAD_API = getenv('ERGOPAD_API')
-NODE_APIKEY = getenv('ERGOPAD_APIKEY')
-NODE_URL = f'''http://{getenv('NODE_URL')}:{getenv('NODE_PORT')}'''
+NODE_API = f'''http://{getenv('NODE_URL')}:{getenv('NODE_PORT')}'''
 NERGS2ERGS = 10**9
-headers = {'Content-Type': 'application/json', 'api_key': NODE_APIKEY}
+headers = {'Content-Type': 'application/json'}
 
 class Network():
   Mainnet = 0 << 4
@@ -21,7 +19,7 @@ def b58(n):
     return b58encode(bytes.fromhex(n)).decode('utf-8')
 
 def get_node_info():
-    res = get(f'{NODE_URL}/info', headers=headers, timeout=2)
+    res = get(f'{NODE_API}/info', headers=headers, timeout=2)
     node_info = None
     if not res.ok:
         raise ValueError(f'ergo.get_node_info; unable to retrieve node info: {res.text}')
@@ -33,7 +31,7 @@ def get_node_info():
     return node_info
 
 def get_genesis_block():
-    genesis_block = get(f'{NODE_URL}/utxo/genesis', headers=headers, timeout=2)
+    genesis_block = get(f'{NODE_API}/utxo/genesis', headers=headers, timeout=2)
     if not genesis_block.ok:
         raise ValueError(f'ergo.get_genesis_block; unable to determine genesis blocks {genesis_block.text}')
 

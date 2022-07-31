@@ -1,0 +1,72 @@
+<html>
+    <head>
+        <style>
+            body, p {font-family: Arial, Helvetica, sans-serif}
+        </style>
+        <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+        <script>
+            API = '10.0.0.125:7000'
+            // const axios = require('axios');
+            function burn() {
+                token = document.getElementById("tknFactory").elements["token"].value;
+                amount = document.getElementById("tknFactory").elements["amount"].value;
+                alert('Are you sure? Burn '+ amount + ' token(s), ' + token)
+            }
+
+            function mint() {
+                token = document.getElementById("tknFactory").elements["token"].value;
+                amount = document.getElementById("tknFactory").elements["amount"].value;
+                alert('Are you sure? Mint '+ amount + ' token(s), ' + token)
+            }
+
+            function snapshot() {
+                token_id = document.getElementById("snapshot").elements["token"].value;
+                // alert(token_id)
+                req = async() => {
+                    try { 
+                        res = await axios.post(`http://${API}/api/snapshot/byTokenId`, {'id': token_id})
+                        document.getElementById('results').textContent = JSON.stringify(res.data['snapshot'], null, 2);
+                    } 
+                    catch(err) { console.log(err) }
+                }
+                req()
+            }
+        </script>
+    </head>
+    <body><table width=90% height="100%" border="1" cellpadding="2" cellspaceing="2">
+
+        <!-- actions -->
+        <tr valign="top"><td height="30%" width="50%">
+            <h1>Token Factory</h1>
+            <form id=tknFactory>
+                <table>
+                    <tr><td align=right>Token ID:</td><td><input name=token type=text></td><td></td></tr>
+                    <tr><td align=right>Amount:</td><td><input name=amount type=number></td><td><i>(use 100 for 1 token with 2 decimals)</i></td></tr>
+                    <tr><td align=right></td>
+                        <td>
+                            <input value=Burn type=button onclick="burn();">
+                            <input value=Mint type=button onclick="mint();">
+                        </td>
+                        <td></td>
+                    </tr>
+                </table>
+            </form>
+        </td><td>
+            <h1>Snapshot</h1>
+            <form id=snapshot>
+                <table>
+                    <tr><td align=right>Token ID:</td><td><input name=token type=text></td><td></td></tr>
+                    <tr><td align=right></td>
+                        <td>
+                            <input value=Snapshot type="button" onclick="snapshot();">
+                        </td>
+                        <td></td>
+                    </tr>
+                </table>
+            </form>
+        </td></tr>
+
+        <!-- results -->
+        <tr valign="top"><td colspan=2><blockquote><pre id="results" name="results">...</pre></blockquote></td></tr>        
+    </table></body>
+</html>

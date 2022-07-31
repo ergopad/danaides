@@ -1,8 +1,8 @@
 version: '3.9'
 
 services:
-  unspent:
-    container_name: unspent
+  danaides:
+    container_name: danaides
     # image: python:3
     build: 
       context: .
@@ -15,8 +15,26 @@ services:
       - ./app:/app
     networks:
       - ergopad-net
+    command: python main.py
     # command: watchmedo auto-restart --recursive --pattern="*.py" --directory="/app" -- python -m main
-    command: tail /dev/null -f
+    # command: tail /dev/null -f
+
+  danaides_api:
+    container_name: danaides_api
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    env_file: ${ENV_FILE}
+    working_dir: /app
+    ports:
+      - 7000:7000
+      - 7001:8000 # default port for python -m http.server
+    volumes:
+      - ./app:/app
+    networks:
+      - ergopad-net
+    command: uvicorn api:app --reload --workers 1 --reload-dir /app --host 0.0.0.0 --port 7000 --proxy-headers --use-colors
+    # command: tail /dev/null -f
 
 networks:
   ergopad-net:
