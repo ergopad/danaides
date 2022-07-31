@@ -6,7 +6,7 @@ import json
 from time import sleep 
 from utils.logger import logger, Timer, printProgressBar
 from utils.db import eng, text
-from utils.ergo import headers, NODE_URL
+from utils.ergo import headers, NODE_API
 from utils.aioreq import get_json_ordered
 from requests import get
 from ergo_python_appkit.appkit import ErgoValue
@@ -33,7 +33,7 @@ async def checkpoint(utxos):
             contents['box_id'].append(box_id)
             contents['ergo_tree'].append(content['ergo_tree'])
             if content['address'] not in addr_converter:
-                r2a = get(f'''{NODE_URL}/utils/rawToAddress/{content['address']}''', headers=headers, timeout=2)
+                r2a = get(f'''{NODE_API}/utils/rawToAddress/{content['address']}''', headers=headers, timeout=2)
                 if r2a.ok:
                     pubkey = r2a.json()['address']
                     addr_converter[content['address']] = pubkey
@@ -125,6 +125,7 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
         t.start()
 
         # handle globals when process called from as plugin
+        PRETTYPRINT = False
         if is_plugin:
             if args.prettyprint:
                 PRETTYPRINT = True
@@ -144,7 +145,6 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
             sleep(2)    
 
         max_height = 0 # track max height
-        utxo_counter = 0
         last_r = 1
 
         # process all new, unspent boxes
@@ -163,15 +163,15 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                     if next_r > box_count:
                         next_r = box_count
 
-                    suffix = f'''{t.split()} :: ({next_r} boxes) Process ...'''                    
+                    suffix = f'''{t.split()} :: Process ({next_r:,}/{box_count:,}) ...'''                    
                     if PRETTYPRINT: printProgressBar(r, box_count, prefix=t.split(), suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
-                    else: logger.debug(suffix)
+                    else: logger.info(suffix)
 
                     utxos = {}
 
                     # find all the calls to build boxes
                     if VERBOSE: logger.warning(f'{r}::{next_r}::{boxes[r:next_r]}, len={box_count}')
-                    urls = [[box['height'], f'''{NODE_URL}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
+                    urls = [[box['height'], f'''{NODE_API}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
                     if VERBOSE: logger.debug(f'slice: {r}:{next_r} / up to height: {boxes[next_r-1]["height"]}')
                     while retries < 5:
                         try:
@@ -214,9 +214,12 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                             pass
 
                     # save current unspent to sql
-                    suffix = f'{utxo_counter} :: Checkpoint...'
+                    suffix = f'Checkpoint...'
                     if PRETTYPRINT: printProgressBar(next_r, box_count, prefix=t.split(), suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
-                    else: logger.info(suffix)
+                    else:
+                        try: percent_complete = f'{100*next_r/box_count:0.2f}%' 
+                        except: percent_complete= 0
+                        logger.warning(f'{percent_complete}/{t.split()} {suffix}')
                     await checkpoint(utxos)
 
                     # track utxos height here (since looping through boxes)

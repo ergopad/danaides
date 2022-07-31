@@ -3,11 +3,13 @@ import os, sys, time, signal
 import pandas as pd
 import argparse
 
+from time import sleep
 from config import dotdict
 from utils.db import eng, text, dnp
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
-from utils.ergo import get_node_info, get_genesis_block, NODE_URL, NODE_APIKEY
+from utils.ergo import get_node_info, get_genesis_block, NODE_API
 from utils.aioreq import get_json_ordered
+from sqlalchemy.exc import OperationalError
 from plugins import prices, utxo, token
 from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
@@ -25,7 +27,7 @@ PLUGINS = dotdict({
 })
 TOKENS = 'tokens'
 BOXES = 'boxes'
-HEADERS = {'Content-Type': 'application/json', 'api_key': NODE_APIKEY}
+HEADERS = {'Content-Type': 'application/json'}
 BLIPS = []
 #endregion INIT
 
@@ -192,7 +194,7 @@ async def get_height(args, height: int=-1) -> int:
 
     # nada, start from scratch
     logger.info(f'''No height information, starting at genesis block...''')
-    return None
+    return 0
 
 # handle primary functions: scan blocks sequentially; boxes, tokens, plugins
 async def process(args, t, height: int=-1) -> dict:
@@ -225,23 +227,32 @@ async def process(args, t, height: int=-1) -> dict:
             batch_order = range(last_height, next_height)
 
             # find block headers
-            suffix = f'''BLOCKS: {last_height}/{next_height}, current: {current_height}'''
+            suffix = f'''BLOCKS: {last_height}-{next_height} / {current_height}'''
             if PRETTYPRINT: printProgressBar(last_height, current_height, prefix=t.split(), suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
-            else: logger.info(suffix)
-            urls = [[blk, f'{NODE_URL}/blocks/at/{blk}'] for blk in batch_order]
+            else: 
+                try: percent_complete = f'{100*last_height/current_height:0.2f}%'
+                except: percent_complete= 0
+                logger.info(f'{percent_complete}/{t.split()} {suffix}')
+            urls = [[blk, f'{NODE_API}/blocks/at/{blk}'] for blk in batch_order]
             block_headers = await get_all(urls)
 
             # find transactions
-            suffix = f'''TRANSACTIONS: {last_height}/{next_height}, current: {current_height}'''
+            suffix = f'''TRANSACTIONS: {last_height}-{next_height} / {current_height}'''
             if PRETTYPRINT: printProgressBar(int(last_height+(FETCH_INTERVAL/3)), current_height, prefix=t.split(), suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
-            else: logger.info(suffix)
-            urls = [[hdr[1], f'''{NODE_URL}/blocks/{hdr[2][0]}/transactions'''] for hdr in block_headers if hdr[1] != 0]
+            else: 
+                try: percent_complete = f'{100*int(last_height+(2*FETCH_INTERVAL/3))/current_height:0.2f}%'
+                except: percent_complete= 0
+                logger.info(f'{percent_complete}/{t.split()} {suffix}')
+            urls = [[hdr[1], f'''{NODE_API}/blocks/{hdr[2][0]}/transactions'''] for hdr in block_headers if hdr[1] != 0]
             blocks = await get_all(urls)
 
             # recreate blockchain (must put together in order)
-            suffix = f'''UNSPENT: {last_height}/{next_height}, current: {current_height}'''
+            suffix = f'''UNSPENT: {last_height}-{next_height} / {current_height}'''
             if PRETTYPRINT: printProgressBar(int(last_height+(2*FETCH_INTERVAL/3)), current_height, prefix=t.split(), suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
-            else: logger.info(suffix)
+            else: 
+                try: percent_complete = f'{100*int(last_height+(2*FETCH_INTERVAL/3))/current_height:0.2f}%'
+                except: percent_complete= 0
+                logger.info(f'{percent_complete}/{t.split()} {suffix}')
             for blk, transactions in sorted([[b[1], b[2]] for b in blocks]):
                 for tx in transactions['transactions']:
                     unspent = await del_inputs(tx['inputs'], unspent)
@@ -254,7 +265,10 @@ async def process(args, t, height: int=-1) -> dict:
             last_height += FETCH_INTERVAL
             suffix = f'Checkpoint at {next_height} (boxes: {len(unspent)}; tokens: {len(tokens)})...'            
             if PRETTYPRINT: printProgressBar(next_height, current_height, prefix=t.split(), suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
-            else: logger.info(suffix)
+            else: 
+                try: percent_complete = f'{100*next_height/current_height:0.2f}%'
+                except: percent_complete= 0
+                logger.warning(f'{percent_complete}/{t.split()} {suffix}')
             await checkpoint(next_height, unspent, tokens)
                 
             unspent = {}
@@ -328,7 +342,7 @@ class App:
             logger.warning('\n\t'+'\n\t'.join([f'''main.hibernate:: {r['tbl']}: {r['i']} rows, {r['j']} height''' for r in res]))
 
             # chill for next block
-            logger.info('Waiting for next block...')
+            logger.debug('Hibernating...')
             while last_height == current_height:
                 try:
                     inf = get_node_info()
@@ -336,8 +350,11 @@ class App:
 
                     if PRETTYPRINT: 
                         print(f'''\r({current_height}) {t.split()} Waiting for next block{'.'*(infinity_counter%4)}    ''', end = "\r")
-                        infinity_counter += 1
+                    else:
+                        if infinity_counter%15 == 0:
+                            logger.warning(f'''({current_height}) {t.split()} Waiting for next block...''')
 
+                    infinity_counter += 1
                     time.sleep(1)
 
                 except KeyboardInterrupt:
@@ -402,6 +419,19 @@ def cli():
 
 if __name__ == '__main__':
     
+    # sanity check    
+    try: 
+        eng.execute('select 1')
+    except OperationalError as e:
+        logger.warning(f'unable to init db, waiting 5 seconds and trying again')
+        sleep(5)
+        try: 
+            eng.execute('select 1')
+        except Exception as e: 
+            logger.error(f'ERR: unable to connect to database, has API service initialized objects; {e}')
+            try: sys.exit(0)
+            except SystemExit: os._exit(0)            
+
     # setup
     args = cli()
     

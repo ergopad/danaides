@@ -7,7 +7,7 @@ create or replace view v_staking as
 			, (u.assets->'d71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413')::bigint as amount
 			, (u.assets->'1028de73d018f0c9a374b71555c5b8f1390994f2f41633e7b9d68f77735782ee')::int as proxy
 			, u.registers->'R4' as penalty
-			, trim(leading '0e20' from u.registers->'R5') as stakekey_token_id
+			, regexp_replace(u.registers->'R5', '^0e20', '') as stakekey_token_id
 			, t.decimals
 			, t.token_id
 		from utxos u
@@ -21,7 +21,7 @@ create or replace view v_staking as
 			, (u.assets->'1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489')::bigint as amount
 			, (u.assets->'245957934c20285ada547aa8f2c8e6f7637be86a1985b3e4c36e4e1ad8ce97ab')::int as proxy
 			, u.registers->'R4' as penalty
-			, trim(leading '0e20' from u.registers->'R5') as stakekey_token_id
+			, regexp_replace(u.registers->'R5', '^0e20', '') as stakekey_token_id
 			, t.decimals
 			, t.token_id
 		from utxos u
@@ -34,7 +34,7 @@ create or replace view v_staking as
 			, (u.assets->'00b1e236b60b95c2c6f8007a9d89bc460fc9e78f98b09faec9449007b40bccf3')::bigint as amount
 			, (u.assets->'012d649686deeef606d253146bec0cf623f9b84574fbfa0fd0d1091393923613')::int as proxy
 			, u.registers->'R4' as penalty
-			, trim(leading '0e20' from u.registers->'R5') as stakekey_token_id
+			, regexp_replace(u.registers->'R5', '^0e20', '') as stakekey_token_id
 			, t.decimals
 			, t.token_id
 		from utxos u

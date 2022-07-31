@@ -1,5 +1,5 @@
-from sqlalchemy import MetaData, Table, Column
-from sqlalchemy.dialects.postgresql import VARCHAR, BIGINT, INTEGER, TEXT, HSTORE, NUMERIC
+from sqlalchemy import MetaData, Table, Column, text
+from sqlalchemy.dialects.postgresql import VARCHAR, BIGINT, INTEGER, TEXT, HSTORE, NUMERIC, TIMESTAMP, BOOLEAN
 
 # testing
 # from os import getenv
@@ -16,11 +16,19 @@ def get_tables(eng):
     metadata_obj = MetaData(eng)
     TABLES = {}
 
+    TABLES['audit_log'] = Table('audit_log', metadata_obj,
+        Column('id', INTEGER, primary_key=True),
+        Column('height', INTEGER, nullable=False),
+        Column('created_at', TIMESTAMP, nullable=False, server_default=text('now()')),
+        Column('service', VARCHAR(64), nullable=True),
+        Column('notes', TEXT, nullable=True, default=0),
+    )
+
     TABLES['boxes'] = Table('boxes', metadata_obj,
         Column('id', INTEGER, primary_key=True),
         Column('box_id', VARCHAR(64), nullable=False),
         Column('height', INTEGER, nullable=False),
-        Column('is_unspent', INTEGER, nullable=True),
+        Column('is_unspent', BOOLEAN, nullable=True),
         Column('nerg', BIGINT, nullable=True, default=0),
     )
 
@@ -48,7 +56,7 @@ def get_tables(eng):
         Column('token_id', VARCHAR(64), nullable=False),
         Column('decimals', BIGINT, nullable=True),
         Column('amount', BIGINT, nullable=True),
-        Column('token_name', VARCHAR(64), nullable=True),
+        Column('token_name', VARCHAR(1024), nullable=True),
         Column('token_type', VARCHAR(64), nullable=True),
         Column('token_price', NUMERIC(32, 10), nullable=True, default=0.0),
         Column('height', INTEGER, nullable=True),
@@ -73,18 +81,19 @@ def get_tables(eng):
         Column('token_id', VARCHAR(64), nullable=False),
         Column('box_id', VARCHAR(64), nullable=False),
         Column('stakekey_token_id', VARCHAR(64), nullable=False),
-        Column('amount', BIGINT),
+        Column('amount', NUMERIC(32, 10)),
         Column('penalty', VARCHAR(64), nullable=False),
     )
 
     TABLES['vesting'] = Table('vesting', metadata_obj,
         Column('id', INTEGER, primary_key=True),
+        Column('address', VARCHAR(64), nullable=False),
         Column('token_id', VARCHAR(64), nullable=False),
         Column('box_id', VARCHAR(64), nullable=False),
         Column('vesting_key_id', VARCHAR(64), nullable=False),
         Column('parameters', VARCHAR(1024), nullable=False),
-        Column('remaining', BIGINT),
+        Column('remaining', NUMERIC(32, 10)),
         Column('ergo_tree', TEXT),
     )
 
-    return TABLES
+    return metadata_obj, TABLES

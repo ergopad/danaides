@@ -1,4 +1,3 @@
-from os import path, listdir
 from os import path, listdir, getenv
 from sqlalchemy import create_engine, inspect, text, MetaData, Table
 from utils.logger import logger, Timer, printProgressBar
@@ -12,15 +11,15 @@ from random import choices
 DB_DANAIDES = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DBNM')}"
 eng = create_engine(DB_DANAIDES)
 
-DB_ERGOPAD = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/ergopad" # {getenv('ERGOPAD_DBNM')}"
-engErgopad = create_engine(DB_ERGOPAD)
+# DB_ERGOPAD = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/ergopad" # {getenv('ERGOPAD_DBNM')}"
+# engErgopad = create_engine(DB_ERGOPAD)
 
 async def dnp(tbl: str):
     try:
         if tbl not in ['staking', 'vesting', 'assets', 'balances']:
             return {'status': 'error', 'message': f'invalid request for table: "{tbl}"'}
 
-        TABLES = get_tables(eng)
+        metadata_obj, TABLES = get_tables(eng)
         src = TABLES[tbl]
         tmp_table = f'tmp_{tbl}'
         eng._metadata = MetaData(bind=eng)
@@ -104,7 +103,8 @@ async def init_db():
 
     # build tables, if needed
     try:
-        metadata_obj = MetaData(eng)
+        # metadata_obj = MetaData(eng)
+        metadata_obj, TABLES = get_tables(eng)
         metadata_obj.create_all(eng)
 
     except Exception as e:
@@ -127,7 +127,7 @@ async def init_db():
 # create tmp version of table 
 async def build_tmp(tbl:str):
     try:
-        TABLES = get_tables(eng)
+        metadata_obj, TABLES = get_tables(eng)
         tmp = TABLES[tbl]
         tmp.name = f'tmp_{tbl}'
         tmp.create() 

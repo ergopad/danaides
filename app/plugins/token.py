@@ -1,12 +1,9 @@
 import asyncio
-import os, sys, time, signal
 import pandas as pd
 import argparse
 
 from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
-from utils.ergo import get_node_info, get_genesis_block, NODE_URL, NODE_APIKEY
-from utils.aioreq import get_json_ordered
 from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 #region INIT
