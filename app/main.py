@@ -1,5 +1,5 @@
 import asyncio
-import os, sys, time, signal
+import os, sys, signal
 import pandas as pd
 import argparse
 
@@ -27,7 +27,7 @@ PLUGINS = dotdict({
 })
 TOKENS = 'tokens'
 BOXES = 'boxes'
-HEADERS = {'Content-Type': 'application/json'}
+HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Trident/7.0; rv:11.0) like Gecko', "Content-Type": "application/json"} # {'Content-Type': 'application/json'}
 BLIPS = []
 #endregion INIT
 
@@ -147,13 +147,15 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
 async def get_all(urls) -> dict:
     retries = 0
     res = {}
-    while retries < 5:
+    while res == {}:
         try:
             res = await get_json_ordered(urls, HEADERS)
             retries = 5
-        except:
+        except Exception as e:
             retries += 1
-            logger.warning(f'retry: {retries}')
+            res = {}
+            logger.warning(f'retry: {retries} ({e})')
+            sleep(0.1)
             pass
     return res
 
@@ -269,7 +271,10 @@ async def process(args, t, height: int=-1) -> dict:
                 try: percent_complete = f'{100*next_height/current_height:0.2f}%'
                 except: percent_complete= 0
                 logger.warning(f'{percent_complete}/{t.split()} {suffix}')
-            await checkpoint(next_height, unspent, tokens)
+            if len(unspent) > 0:
+                await checkpoint(next_height, unspent, tokens)
+            else:
+                logger.error('ERR: 0 boxes found')
                 
             unspent = {}
             tokens = {}
@@ -355,7 +360,7 @@ class App:
                             logger.warning(f'''({current_height}) {t.split()} Waiting for next block...''')
 
                     infinity_counter += 1
-                    time.sleep(1)
+                    sleep(1)
 
                 except KeyboardInterrupt:
                     logger.debug('Interrupted.')

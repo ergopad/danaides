@@ -47,7 +47,7 @@ async def dnp(tbl: str):
         with eng.begin() as con:
             res = con.execute(sqlRowCount).fetchone()
             rc['before'] = res['rc']
-            logger.warning(rc['before'])
+            logger.warning(f'''row count before: {rc['before']}''')
         
         # check if tmp exists
         if inspect(eng).has_table(tmp_table):
@@ -60,7 +60,7 @@ async def dnp(tbl: str):
 
         # populate tmp
         with eng.begin() as con:
-            logger.warning(f'insert into {tmp_table} from v_')
+            logger.warning(f'insert into {tmp_table} from v_{tbl}')
             con.execute(sqlInsertTmp)
         
         # drop src
@@ -76,7 +76,7 @@ async def dnp(tbl: str):
         with eng.begin() as con:
             res = con.execute(sqlRowCount).fetchone()
             rc['after'] = res['rc']
-            logger.warning(rc['after'])
+            logger.warning(f'''row count after: {rc['after']}''')
 
         return {
             'status': 'success', 
