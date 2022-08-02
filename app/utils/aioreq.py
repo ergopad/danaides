@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Tuple
 from aiohttp import ClientSession
 
 TIMEOUT = 5
+VERBOSE = False
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Trident/7.0; rv:11.0) like Gecko',"Content-Type": "application/json"}
 
 # async get content
@@ -71,7 +72,7 @@ async def http_get_json_ordered_aiohttp(
         sort_order, url = ordered_url
         res = await session.get(url=url, headers=headers, proxy=proxy, timeout=timeout)
         response_json = await res.json(content_type=None)
-        if res.status != 200:
+        if VERBOSE and (res.status != 200):
             logger.debug(f'{sort_order}: url {url}')
             logger.debug(f'session.get: status {res.status}; {response_json} (proxy {proxy}, timeout {timeout}, headers {headers}')
         return res.status, sort_order, response_json
