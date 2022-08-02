@@ -55,3 +55,9 @@ create extension if not exists hstore;
 - Burn/Mint Tokens
 - Integrate [Paideia Contracts](https://github.com/ergo-pad/paideia-contracts)
 - API routes for coommon requests (i.e. staking, vesting), that are currently only available via SQL
+- Setup partitioning
+- .. goal: scalability
+- .. utxos_X00 (for every 100k blocks)
+- .. baseline performance since unspent boxes will stack closer to most recent; may need a better partition boundary
+- .. does this jack with sqlalchemy metadata create_all?
+- handle unicode in token names
