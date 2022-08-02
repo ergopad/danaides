@@ -171,6 +171,7 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                     if VERBOSE: logger.warning(f'{r}::{next_r}::{boxes[r:next_r]}, len={box_count}')
                     urls = [[box['height'], f'''{NODE_API}/utxo/byId/{box['box_id']}'''] for box in boxes[r:next_r]]
                     if VERBOSE: logger.debug(f'slice: {r}:{next_r} / up to height: {boxes[next_r-1]["height"]}')
+                    retries = 0
                     while retries < 5:
                         try:
                             utxo = await get_json_ordered(urls, headers)
