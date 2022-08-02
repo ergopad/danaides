@@ -13,7 +13,7 @@ HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Trident/7.0; rv:11.0) lik
 async def http_get_content_aiohttp(
     session: ClientSession, 
     url: str, 
-    headers: Dict = {}, 
+    headers: Dict = HEADERS, 
     proxy: str = None, 
     timeout: int = TIMEOUT,
 ) -> (int, bytes):
@@ -37,7 +37,7 @@ async def http_get_content_aiohttp(
 async def http_get_json_aiohttp(
     session: ClientSession, 
     url: str, 
-    headers: Dict = {}, 
+    headers: Dict = HEADERS, 
     proxy: str = None, 
     timeout: int = TIMEOUT,
 ) -> (int, Dict[str, Any]):
@@ -61,7 +61,7 @@ async def http_get_json_aiohttp(
 async def http_get_json_ordered_aiohttp(
     session: ClientSession, 
     ordered_url: List, 
-    headers: Dict = {}, 
+    headers: Dict = HEADERS, 
     proxy: str = None, 
     timeout: int = TIMEOUT,
 ) -> (int, int, Dict[str, Any]):
@@ -69,11 +69,11 @@ async def http_get_json_ordered_aiohttp(
     # open http get connection
     try: 
         sort_order, url = ordered_url
-        # logger.debug(f'sort order: {sort_order}')
         res = await session.get(url=url, headers=headers, proxy=proxy, timeout=timeout)
         response_json = await res.json(content_type=None)
         if res.status != 200:
-            logger.debug(f'res; session.get: status {res.status}; {response_json} (proxy {proxy}, timeout {timeout}, headers {headers}')
+            logger.debug(f'{sort_order}: url {url}')
+            logger.debug(f'session.get: status {res.status}; {response_json} (proxy {proxy}, timeout {timeout}, headers {headers}')
         return res.status, sort_order, response_json
 
     except json.decoder.JSONDecodeError as e: 

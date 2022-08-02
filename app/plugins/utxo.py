@@ -120,7 +120,6 @@ async def get_all_unspent_boxes(boxes_tablename:str, box_override:str):
 
 async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes', box_override:str='') -> int:
     try:
-
         t = Timer()
         t.start()
 
@@ -137,7 +136,6 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
         await prepare_destination(boxes_tablename)
         boxes = await get_all_unspent_boxes(boxes_tablename, args.override)
         box_count = len(boxes)
-        logger.debug(f'Found {box_count} boxes to process...')
 
         if not is_plugin:
             # no special processing for checkpoint call
@@ -150,12 +148,12 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
         # process all new, unspent boxes
         logger.info(f'BOXES: {box_count} boxes found...')
         for r in range(last_r-1, box_count, CHECKPOINT_INTERVAL):
-            try:
-                # the node can sometimes get overwhelmed; in the event, retry
-                retries = 0
-                while retries < 3:
-                    if retries > 0:
-                        logger.warning(f'Retry attempt {retries}...')
+            # the node can sometimes get overwhelmed; in the event, retry
+            range_retries = 0
+            while range_retries < 3:
+                try:
+                    if range_retries > 0:
+                        logger.warning(f'Retry attempt {range_retries}...')
                         sleep(1) # take a deep breath before trying again...
 
                     # determine proper slices
@@ -177,10 +175,11 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                         try:
                             utxo = await get_json_ordered(urls, headers)
                             retries = 5
-                        except:
+                        except Exception as e:
                             retries += 1
-                            logger.warning(f'get ordered json retry: {retries}')
+                            logger.warning(f'get ordered json retry: {retries}; {e}')
                             pass
+                    logger.debug(f'Boxes: {box_count}; UTXOs: {len(utxo)}')
 
                     # fetch box info
                     for ergo_tree, box_id, box_assets, registers, nergs, creation_height, transaction_id, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[2]['value'], u[2]['creationHeight'], u[2]['transactionId'], u[1]] for u in utxo if u[0] == 200]:
@@ -236,17 +235,17 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                     if args.override != '':
                         exit(1)
 
-                    retries = 3
+                    range_retries = 3
 
-            except KeyError as e:
-                logger.error(f'ERR (KeyError): {e}; {box_id}')
-                pass
-            
-            except Exception as e:
-                logger.error(f'ERR: {e}; range: {r}')
-                retries += 1
-                sleep(1) # give node a break
-                pass
+                except KeyError as e:
+                    logger.error(f'ERR (KeyError): {e}; {box_id}')
+                    pass
+                
+                except Exception as e:
+                    logger.error(f'ERR: {e}; range: {r}')
+                    range_retries += 1
+                    sleep(1) # give node a break
+                    pass
 
         sec = t.stop()
         logger.debug(f'Processing complete: {sec:0.4f}s...{" "*50}')
