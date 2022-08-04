@@ -96,4 +96,42 @@ def get_tables(eng):
         Column('ergo_tree', TEXT),
     )
 
+    TABLES['tokenomics_ergopad'] = Table('tokenomics_ergopad', metadata_obj,
+        Column('id', INTEGER, primary_key=True),
+        Column('token_id', VARCHAR(64), nullable=False),
+        Column('decimals', INTEGER),
+        Column('token_price', NUMERIC(32, 10)),
+        Column('vested', BIGINT),
+        Column('staked', BIGINT),
+        Column('emitted', BIGINT),
+        Column('stake_pool', BIGINT),
+        Column('supply', BIGINT),
+        Column('in_circulation', BIGINT),
+        Column('vested_actual', NUMERIC(32, 10)),
+        Column('staked_actual', NUMERIC(32, 10)),
+        Column('emitted_actual', NUMERIC(32, 10)),
+        Column('stake_pool_actual', NUMERIC(32, 10)),
+        Column('supply_actual', NUMERIC(32, 10)),
+        Column('in_circulation_actual', NUMERIC(32, 10)),
+    )
+
+    TABLES['tokenomics_paideia'] = Table('tokenomics_paideia', metadata_obj,
+        Column('id', INTEGER, primary_key=True),
+        Column('token_id', VARCHAR(64), nullable=False),
+        Column('decimals', INTEGER),
+        Column('token_price', NUMERIC(32, 10)),
+        Column('vested', BIGINT),
+        Column('staked', BIGINT),
+        Column('emitted', BIGINT),
+        Column('stake_pool', BIGINT),
+        Column('supply', BIGINT),
+        Column('in_circulation', BIGINT),
+        Column('vested_actual', NUMERIC(32, 10)),
+        Column('staked_actual', NUMERIC(32, 10)),
+        Column('emitted_actual', NUMERIC(32, 10)),
+        Column('stake_pool_actual', NUMERIC(32, 10)),
+        Column('supply_actual', NUMERIC(32, 10)),
+        Column('in_circulation_actual', NUMERIC(32, 10)),
+    )
+
     return metadata_obj, TABLES

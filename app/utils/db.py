@@ -16,8 +16,13 @@ eng = create_engine(DB_DANAIDES)
 
 async def dnp(tbl: str):
     try:
-        if tbl not in ['staking', 'vesting', 'assets', 'balances']:
-            return {'status': 'error', 'message': f'invalid request for table: "{tbl}"'}
+        if tbl not in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia']:
+            return {
+                'status': 'error', 
+                'message': f'invalid request for table: "{tbl}"', 
+                'row_count_before': -1, 
+                'row_count_after': -1,
+            }
 
         metadata_obj, TABLES = get_tables(eng)
         src = TABLES[tbl]
@@ -44,12 +49,17 @@ async def dnp(tbl: str):
             'after': 0,
         }
         # starting row count
+        logger.debug(f'before rc')
         with eng.begin() as con:
-            res = con.execute(sqlRowCount).fetchone()
-            rc['before'] = res['rc']
+            try:
+                res = con.execute(sqlRowCount).fetchone()
+                rc['before'] = res['rc']
+            except:
+                pass
             logger.warning(f'''row count before: {rc['before']}''')
         
         # check if tmp exists
+        logger.debug(f'check tmp')
         if inspect(eng).has_table(tmp_table):
             logger.warning(f'drop {tmp_table}')
             tmp.drop()
@@ -64,8 +74,9 @@ async def dnp(tbl: str):
             con.execute(sqlInsertTmp)
         
         # drop src
-        logger.warning(f'drop {tbl}')
-        src.drop()
+        if inspect(eng).has_table(tbl):
+            logger.warning(f'drop {tbl}')
+            src.drop()
         
         # rename tmp to src
         with eng.begin() as con:
@@ -87,7 +98,12 @@ async def dnp(tbl: str):
 
     except Exception as e:
         logger.error(f'ERR: {e}')
-        return {'status': 'error', 'message': f'ERR: dnp, {e}'}
+        return {
+            'status': 'error', 
+            'message': f'ERR: dnp, {e}', 
+            'row_count_before': -1, 
+            'row_count_after': -1,
+        }
 
 # create db objects if they don't exists
 async def init_db():

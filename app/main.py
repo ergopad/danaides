@@ -147,15 +147,14 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
 async def get_all(urls) -> dict:
     retries = 0
     res = {}
-    while res == {}:
+    while res == {} and (retries < 15):
         try:
             res = await get_json_ordered(urls, HEADERS)
-            retries = 5
+            retries = 15
         except Exception as e:
             retries += 1
             res = {}
             logger.warning(f'retry: {retries} ({e})')
-            sleep(0.1)
             pass
     return res
 
@@ -473,7 +472,7 @@ if __name__ == '__main__':
                 asyncio.run(prices.process(is_plugin=True, args=args))
 
             # DROP-N-POP
-            for tbl in ['staking', 'vesting', 'assets', 'balances']:
+            for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia']:
                 logger.info(f'main:: {tbl.upper()}...')
                 res = asyncio.run(dnp(tbl))
                 logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
