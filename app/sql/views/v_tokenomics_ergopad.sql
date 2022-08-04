@@ -60,11 +60,11 @@ create or replace view v_tokenomics_ergopad as
 		, supply - vested - emitted - stake_pool as in_circulation
 
 		-- w/decimals
-		, (vested/t.decimals)::decimal(32, 2) as vested_actual
-        , (staked/t.decimals)::decimal(32, 2) as staked_actual
-        , (emitted/t.decimals)::decimal(32, 2) as emitted_actual
-        , (stake_pool/t.decimals)::decimal(32, 2) as stake_pool_actual
-        , (supply/t.decimals)::decimal(32, 2) as supply_actual
+		, (vested/power(10, t.decimals))::decimal(32, 2) as vested_actual
+        , (staked/power(10, t.decimals))::decimal(32, 2) as staked_actual
+        , (emitted/power(10, t.decimals))::decimal(32, 2) as emitted_actual
+        , (stake_pool/power(10, t.decimals))::decimal(32, 2) as stake_pool_actual
+        , (supply/power(10, t.decimals))::decimal(32, 2) as supply_actual
 		, ((supply - vested - emitted - stake_pool)/decimals)::decimal(32, 2) as in_circulation_actual
     from vals v
 		join tokens t on t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
