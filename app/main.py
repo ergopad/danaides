@@ -147,15 +147,14 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
 async def get_all(urls) -> dict:
     retries = 0
     res = {}
-    while res == {}:
+    while res == {} and (retries < 15):
         try:
             res = await get_json_ordered(urls, HEADERS)
-            retries = 5
+            retries = 15
         except Exception as e:
             retries += 1
             res = {}
             logger.warning(f'retry: {retries} ({e})')
-            sleep(0.1)
             pass
     return res
 

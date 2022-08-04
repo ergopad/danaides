@@ -10,6 +10,8 @@ RUN apt-get update \
   && apt-get -y install nano curl \
   && apt-get -y install python3-watchdog \
   && apt-get -y install openjdk-11-jdk \
+  # aarm64 compatibility
+  && apt-get -y install libpq-dev \
   && apt-get clean
 
 # install python dependencies
