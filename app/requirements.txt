@@ -9,6 +9,6 @@ fastapi
 uvicorn
 
 sqlalchemy
-psycopg2-binary
+psycopg2==2.9.3
 
 ergo-python-appkit==0.1.0
