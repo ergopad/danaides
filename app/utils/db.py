@@ -1,5 +1,7 @@
 from os import path, listdir, getenv
 from sqlalchemy import create_engine, inspect, text, MetaData, Table
+from sqlalchemy.schema import DropTable
+from sqlalchemy.ext.compiler import compiles
 from utils.logger import logger, Timer, printProgressBar
 from config import get_tables
 from string import ascii_uppercase, digits
@@ -12,7 +14,11 @@ DB_DANAIDES = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWOR
 eng = create_engine(DB_DANAIDES)
 
 # DB_ERGOPAD = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/ergopad" # {getenv('ERGOPAD_DBNM')}"
-# engErgopad = create_engine(DB_ERGOPAD)
+# engErgopad = create_engine(DB_ERGOP
+
+@compiles(DropTable, "postgresql")
+def _compile_drop_table(element, compiler, **kwargs):
+    return compiler.visit_drop_table(element) + " CASCADE"
 
 async def dnp(tbl: str):
     try:
@@ -58,6 +64,14 @@ async def dnp(tbl: str):
                 pass
             logger.warning(f'''row count before: {rc['before']}''')
         
+        # avoid dups witn index names on tmp table
+        for i in tmp.indexes:
+            # logger.debug(f'INDEX: {i.name}')
+            # avoid dup index (NOTE: must do this before tmp.create)
+            sql = f'drop index {i.name}'
+            with eng.begin() as con:                
+                con.execute(sql)
+
         # check if tmp exists
         logger.debug(f'check tmp')
         if inspect(eng).has_table(tmp_table):
@@ -82,6 +96,11 @@ async def dnp(tbl: str):
         with eng.begin() as con:
             logger.warning(f'rename {tmp_table} to {tbl}')
             con.execute(f'alter table {tmp_table} rename to {tbl};')
+
+        # revert to name without tmp_ prepended
+        for i in tmp.indexes:
+            logger.debug(f'INDEX: {i.name}')
+            i.name = i.name[4:]
 
         # final row count
         with eng.begin() as con:
@@ -134,6 +153,22 @@ async def init_db():
             for v in views:
                 if v.startswith('v_') and v.endswith('.sql'):
                     with open(path.join(view_dir, v), 'r') as f:
+                        sql = f.read()
+                    con.execute(sql)
+
+    except Exception as e:
+        logger.error(f'ERR: {e}')
+
+# build all indexes
+async def build_indexes():
+    try:
+        index_dir = '/app/sql/indexes'
+        with eng.begin() as con:
+            indexes = listdir(index_dir)
+            for i in indexes:
+                # if v.startswith('i_') and  and i.endswith('.sql'):
+                if i.endswith('.sql'):
+                    with open(path.join(index_dir, i), 'r') as f:
                         sql = f.read()
                     con.execute(sql)
 

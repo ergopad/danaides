@@ -1,4 +1,4 @@
-from sqlalchemy import MetaData, Table, Column, text
+from sqlalchemy import MetaData, Table, Column, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import VARCHAR, BIGINT, INTEGER, TEXT, HSTORE, NUMERIC, TIMESTAMP, BOOLEAN
 
 # testing
@@ -64,7 +64,7 @@ def get_tables(eng):
 
     TABLES['balances'] = Table('balances', metadata_obj,
         Column('id', INTEGER, primary_key=True),
-        Column('address', VARCHAR(64), nullable=False),
+        Column('address', VARCHAR(64), nullable=False, unique=True),
         Column('nergs', BIGINT),
     )
 
