@@ -5,7 +5,7 @@ import argparse
 
 from time import sleep
 from config import dotdict
-from utils.db import eng, text, dnp
+from utils.db import eng, text, dnp, build_indexes
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, NODE_API
 from utils.aioreq import get_json_ordered
@@ -196,20 +196,6 @@ async def get_height(args, height: int=-1) -> int:
     # nada, start from scratch
     logger.info(f'''No height information, starting at genesis block...''')
     return 0
-
-async def build_indexes():
-    try:
-        index_dir = '/app/sql/indexes'
-        with eng.begin() as con:
-            indexes = os.listdir(index_dir)
-            for i in indexes:
-                if i.endswith('.sql'):
-                    with open(os.path.join(index_dir, i), 'r') as f:
-                        sql = f.read()
-                    con.execute(sql)
-
-    except Exception as e:
-        logger.error(f'ERR: {e}')
 
 # handle primary functions: scan blocks sequentially; boxes, tokens, plugins
 async def process(args, t, height: int=-1) -> dict:
@@ -492,7 +478,8 @@ if __name__ == '__main__':
                 logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
 
             # rebuild indexes after drop'n'pop
-            asyncio.run(build_indexes())
+            # logger.debug(f'''main:: build indexes''')
+            # asyncio.run(build_indexes())
 
             # quit or wait for next block
             if args.once:
