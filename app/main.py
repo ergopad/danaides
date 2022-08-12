@@ -5,7 +5,7 @@ import argparse
 
 from time import sleep
 from config import dotdict
-from utils.db import eng, text, dnp
+from utils.db import eng, text, dnp, build_indexes
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, NODE_API
 from utils.aioreq import get_json_ordered
@@ -476,6 +476,10 @@ if __name__ == '__main__':
                 logger.info(f'main:: {tbl.upper()}...')
                 res = asyncio.run(dnp(tbl))
                 logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
+
+            # rebuild indexes after drop'n'pop
+            # logger.debug(f'''main:: build indexes''')
+            # asyncio.run(build_indexes())
 
             # quit or wait for next block
             if args.once:
