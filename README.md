@@ -41,7 +41,7 @@ create extension if not exists hstore;
 - Based on the method requesting node data, a local ergonode is required; async/multithreaded
 - the ergonode (i.e. quicknode, if using), should be on the docker network: ergopad-net
 
-### Snapshots
+### Snapshots (TODO: in progress)
 - all tables can be snapshot with naming convention: [table]_[height] (i.e. boxes_700000)
 
 ### CLI
@@ -51,7 +51,7 @@ create extension if not exists hstore;
 - -B --override - process with just this box_id (use for testing)
 - -O --once - process once and complete (don't wait for next block)
 
-# Features In Progress
+# Features (TODO: in progress)
 - Burn/Mint Tokens
 - Integrate [Paideia Contracts](https://github.com/ergo-pad/paideia-contracts)
 - API routes for coommon requests (i.e. staking, vesting), that are currently only available via SQL
