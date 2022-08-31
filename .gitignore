@@ -1,2 +1,9 @@
+# Securables
 .env
+
+# Python
 __pycache__
+
+# JRE
+hs_err_*.log
+
