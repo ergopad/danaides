@@ -83,6 +83,7 @@ def get_tables(eng):
         Column('stakekey_token_id', VARCHAR(64), nullable=False),
         Column('amount', NUMERIC(32, 10)),
         Column('penalty', VARCHAR(64), nullable=False),
+        Column('project_name', VARCHAR(64), nullable=False),
     )
 
     TABLES['vesting'] = Table('vesting', metadata_obj,
@@ -134,4 +135,10 @@ def get_tables(eng):
         Column('in_circulation_actual', NUMERIC(32, 10)),
     )
 
+    TABLES['unspent_by_token'] = Table('unspent_by_token', metadata_obj,
+        Column('id', INTEGER, primary_key=True),
+        Column('token_id', VARCHAR(64), nullable=False),
+        Column('box_id', VARCHAR(64), nullable=False),
+    )
+    
     return metadata_obj, TABLES
