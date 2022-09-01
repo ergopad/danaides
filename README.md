@@ -52,6 +52,10 @@ _NOTE_: danaides_api is the container that will create the needed tables, not da
 <br>
 From scratch, all tables and views will be created.  This may be handy if changes are made and there is no clear path to sql migration, simply drop database and start over.
 
+Once synced, you may have to run this command if you receive an error regarding an existing table balances_address_key 
+
+`ALTER TABLE balances DROP CONSTRAINT balances_address_key;`
+
 ### Notes
 - The API service builds the database objects, so must complete for danaides to run; restart if needed.
 - The first run through will take some time to build boxes and then utxos table.
