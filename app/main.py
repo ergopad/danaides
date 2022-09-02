@@ -17,7 +17,7 @@ from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 # GLOBALs
 PRETTYPRINT = False
 VERBOSE = False
-FETCH_INTERVAL = 1500
+FETCH_INTERVAL = 500
 LINELEN = 100
 PLUGINS = dotdict({
     'staking': True, 
@@ -396,7 +396,8 @@ def cli():
     parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
     parser.add_argument("-B", "--override", help="Process this box", default='')
     parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
-    parser.add_argument("-F", "--fetchinterval", help="Begin at this height", type=int, default=1500)
+    parser.add_argument("-Z", "--sleep", help="Begin at this height", type=int, default=0)
+    parser.add_argument("-F", "--fetchinterval", help="Begin at this height", type=int, default=FETCH_INTERVAL)
     parser.add_argument("-P", "--prettyprint", help="Progress bar vs. scrolling", action='store_true')
     parser.add_argument("-O", "--once", help="When complete, finish", action='store_true')
     parser.add_argument("-X", "--ignoreplugins", help="Only process boxes", action='store_true')
@@ -425,12 +426,12 @@ if __name__ == '__main__':
     
     # sanity check    
     try: 
-        eng.execute('select 1')
+        eng.execute('select service from audit_log where height = -1')
     except OperationalError as e:
         logger.warning(f'unable to init db, waiting 5 seconds and trying again')
         sleep(5)
         try: 
-            eng.execute('select 1')
+            eng.execute('select service from audit_log where height = -1')
         except Exception as e: 
             logger.error(f'ERR: unable to connect to database, has API service initialized objects; {e}')
             try: sys.exit(0)
@@ -438,6 +439,11 @@ if __name__ == '__main__':
 
     # setup
     args = cli()
+
+    # one time sleep
+    if args.sleep > 0:
+        logger.warning(f'initial sleep: {args.sleep}s')
+        sleep(args.sleep)
     
     # create app
     app = App()
