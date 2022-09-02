@@ -6,15 +6,10 @@ from utils.logger import logger, Timer, printProgressBar
 from config import get_tables
 from string import ascii_uppercase, digits
 from random import choices
+from time import sleep
 
-# from dotenv import load_dotenv
-# load_dotenv()
-
-DB_DANAIDES = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DBNM')}"
+DB_DANAIDES = f"postgresql://{getenv('DANAIDES_USER')}:{getenv('DANAIDES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DB')}"
 eng = create_engine(DB_DANAIDES)
-
-# DB_ERGOPAD = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/ergopad" # {getenv('ERGOPAD_DBNM')}"
-# engErgopad = create_engine(DB_ERGOP
 
 @compiles(DropTable, "postgresql")
 def _compile_drop_table(element, compiler, **kwargs):
@@ -36,9 +31,12 @@ async def dnp(tbl: str):
         eng._metadata = MetaData(bind=eng)
         eng._metadata.reflect(eng)
         tmp = Table(tbl, eng._metadata)
+
+        rndstr = '__'+(''.join(choices(ascii_uppercase+digits, k=10)))
         tmp.name = tmp_table
-        tmp.primary_key.name = f'''staking_pkey_{''.join(choices(ascii_uppercase+digits, k=10))}'''
         cols = ','.join([n.name for n in tmp.columns if n.name != 'id'])
+        if tmp.primary_key.name is not None:
+            tmp.primary_key.name = (tmp.primary_key.name.split('__'))[0] + rndstr
 
         sqlInsertTmp = f'''
             insert into {tmp_table} ({cols})
@@ -64,13 +62,13 @@ async def dnp(tbl: str):
                 pass
             logger.warning(f'''row count before: {rc['before']}''')
         
-        # avoid dups witn index names on tmp table
+        # avoid dups with index names
         for i in tmp.indexes:
-            # logger.debug(f'INDEX: {i.name}')
-            # avoid dup index (NOTE: must do this before tmp.create)
-            sql = f'drop index {i.name}'
-            with eng.begin() as con:                
-                con.execute(sql)
+            i.name = (i.name.split('__'))[0] + rndstr
+
+        # avoid dups with constraint names
+        for c in tmp.constraints:
+            c.name = (c.name.split('__'))[0] + rndstr
 
         # check if tmp exists
         logger.debug(f'check tmp')
@@ -78,7 +76,7 @@ async def dnp(tbl: str):
             logger.warning(f'drop {tmp_table}')
             tmp.drop()
 
-        # crate tmp
+        # create tmp
         logger.warning(f'create {tmp_table}')
         tmp.create()
 
@@ -97,17 +95,13 @@ async def dnp(tbl: str):
             logger.warning(f'rename {tmp_table} to {tbl}')
             con.execute(f'alter table {tmp_table} rename to {tbl};')
 
-        # revert to name without tmp_ prepended
-        for i in tmp.indexes:
-            logger.debug(f'INDEX: {i.name}')
-            i.name = i.name[4:]
-
         # final row count
         with eng.begin() as con:
             res = con.execute(sqlRowCount).fetchone()
             rc['after'] = res['rc']
             logger.warning(f'''row count after: {rc['after']}''')
 
+        # fin
         return {
             'status': 'success', 
             'message': tbl, 
@@ -127,6 +121,22 @@ async def dnp(tbl: str):
 # create db objects if they don't exists
 async def init_db():
     # if new db, make sure hstore extension exists
+    attempt = 5
+    while attempt > 0:
+        try:
+            sql = 'select service from audit_log where height = -1'
+            with eng.begin() as con:
+                con.execute(sql)
+            attempt = 0
+
+        except Exception as e:
+            attempt -= 1
+            if attempt == 0:
+                logger.error(f'ERR: Initializing database in 5 attempts; {e}')
+            else:
+                logger.warning(f'Failed to access database (attempt {5-attempt})')
+            sleep(1)
+
     try:
         sql = 'create extension if not exists hstore;'
         with eng.begin() as con:
