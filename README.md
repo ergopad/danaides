@@ -7,8 +7,9 @@ Minimally update when creating `.env` file:
 > NODE_URL (ip address of ergonode)
 
 Strongly recommended to update these, although build will technically work as-is.
-> DANAIDES_PASSWORD (non-superuser, used in the application)
-> POSTGRES_PASSWORD (superuser)
+> DANAIDES_PASSWORD (non-superuser, used in the application)<br>
+> POSTGRES_PASSWORD (superuser)<br>
+<br>
 _The danaides password also needs to match what is in sql/init.sql_
 
 # TL;DR
