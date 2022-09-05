@@ -146,8 +146,11 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
 # performant API call
 async def get_all(urls) -> dict:
     retries = 1
-    res = {}    
+    res = {}
+
+    # try until successful; missing a valid response will invalidate the database
     while retries > 0:
+        # loop 3 times, then pause
         while res == {} and (retries%3 > 0):
             try:
                 res = await get_json_ordered(urls, HEADERS)
@@ -159,10 +162,12 @@ async def get_all(urls) -> dict:
                 res = {}
                 logger.warning(f'retry: {retries} ({e})')
 
-        # cannot ignore this failing since blocks will not be put together in proper order
+        # take a beat
         if retries > 0:
-            logger.warning(f'WARN: {retries} retries; sleeping for 1 min.')
-            sleep(60)
+            logger.warning(f'WARN: {retries} retries; sleeping for 20s.')
+            sleep(20)
+    
+    return res
 
 # find the current block height
 async def get_height(args, height: int=-1) -> int:
