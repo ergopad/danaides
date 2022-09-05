@@ -3,14 +3,21 @@
 > docker compose up<br>
 
 ## ENV
-Minimally update when creating `.env` file:
-> NODE_URL (ip address of ergonode)
+Minimally update when creating `.env` file:<br>
+> NODE_URL (ip address of ergonode)<br>
 
 Strongly recommended to update these, although build will technically work as-is.
 > DANAIDES_PASSWORD (non-superuser, used in the application)<br>
 > POSTGRES_PASSWORD (superuser)<br>
+_The danaides password also needs to match what is in sql/init.sql_<br>
+
+## ALT START
+To use a custom config easily, danaides.yml can be setup<br>
+> docker compose -f danaides.yml up<br>
+Change the POSTGRES_HOST in .env to use the proper database<br>
 <br>
-_The danaides password also needs to match what is in sql/init.sql_
+_optionally,_<br>
+> docker network create ergopad-net<br>
 
 # TL;DR
 - Unspent boxes are stored in boxes table, including height; this is current list of all unspent boxes (spent are not currently saved)
@@ -41,26 +48,26 @@ create extension if not exists hstore;
 ## Performance
 The primary goal of Danaides is to perform well for produciton.  This has caused some tweaky implementation steps, including some specific SQL code, which currently binds this implementation to Postgres (even though SqlAlchemy is used).
 - In some scenarios, `docker network create ergopad-net` and binding all containers (including node) will improve performance of network requests
-- The intermediate table creation uses a, "drop-n-pop" method, which creates a temp table, drops the primary/renames temp to avoid latency during the insert.  The drop/rename step is done in a transaction to avoid the race condition that would result in a missing table.  
+- The intermediate table creation uses a, "drop-n-pop" method, which creates a temp table, drops the primary/renames temp to avoid latency during the insert.  The drop/rename step is done in a transaction to avoid the race condition that would result in a missing table.
 <br>
-_There are many opportunities to tune performance, but this project has been developed quickly so please submit suggestions to the ErgoPad Team._
+_There are many opportunities to tune performance, but this project has been developed quickly so please submit suggestions to the ErgoPad Team._<br>
 
 ## Permissions
-Create the user that will perform all CRUD actions; all danaides operations
->`create user pirene with password xyzpdq;`
+Create the user that will perform all CRUD actions; all danaides operations<br>
+>`create user pirene with password xyzpdq;`<br>
 
-Update privileges.  Since tables are recreated for performance, the default privileges must be updated
+Update privileges.  Since tables are recreated for performance, the default privileges must be updated<br>
 >`alter default privileges in schema public grant select, insert, update, delete on tables to pirene;`<br>
->`alter default privileges in schema public grant usage on sequences to pirene;`
+>`alter default privileges in schema public grant usage on sequences to pirene;`<br>
 
 ### NOTE: this may not be needed...
-Since using drop-n-pop method, also initial creation of tables, this makes sense, although above permissions may be enough (TODO: clarify)
-> `grant create on schema public to pirene;`
+Since using drop-n-pop method, also initial creation of tables, this makes sense, although above permissions may be enough (TODO: clarify)<br>
+> `grant create on schema public to pirene;`<br>
 
 ## First Run
 _NOTE_: danaides_api is the container that will create the needed tables, not danaides so the dependencies are useful in the compose file<br>
 <br>
-From scratch, all tables and views will be created once you start docker compose.  This may be handy if changes are made and there is no clear path to sql migration, simply drop database and start over.
+From scratch, all tables and views will be created once you start docker compose.  This may be handy if changes are made and there is no clear path to sql migration, simply drop database and start over.<br>
 
 ### Notes
 - The API service builds the database objects, so must complete for danaides to run; restart if needed.
