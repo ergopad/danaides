@@ -8,6 +8,8 @@ services:
       dockerfile: Dockerfile
     env_file: ${ENV_FILE}
     working_dir: /app
+    security_opt:
+      - seccomp:unconfined
     ports:
       - 4444:4444
     volumes:
@@ -28,6 +30,8 @@ services:
       dockerfile: Dockerfile
     env_file: ${ENV_FILE}
     working_dir: /app
+    security_opt:
+      - seccomp:unconfined
     ports:
       - 7000:7000
       - 7001:8000 # default port for python -m http.server
@@ -47,6 +51,8 @@ services:
     image: postgres:14
     # TODO: still need this?
     shm_size: 2gb
+    security_opt:
+      - seccomp:unconfined
     restart: always
     volumes: 
       - postgres_vol:/var/lib/postgresql/data:cached
