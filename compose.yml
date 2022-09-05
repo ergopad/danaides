@@ -3,39 +3,72 @@ version: '3.9'
 services:
   danaides:
     container_name: danaides
-    # image: python:3
     build: 
       context: .
       dockerfile: Dockerfile
     env_file: ${ENV_FILE}
     working_dir: /app
+    security_opt:
+      - seccomp:unconfined
     ports:
       - 4444:4444
     volumes:
       - ./app:/app
     networks:
-      - ergopad-net
-    command: python main.py
+      - net
+      # - ergopad-net # join existing network
+    depends_on:
+      - danaides-api
+    command: python main.py --sleep 10
     # command: watchmedo auto-restart --recursive --pattern="*.py" --directory="/app" -- python -m main
     # command: tail /dev/null -f
 
-  danaides_api:
-    container_name: danaides_api
+  danaides-api:
+    container_name: danaides-api
     build: 
       context: .
       dockerfile: Dockerfile
     env_file: ${ENV_FILE}
     working_dir: /app
+    security_opt:
+      - seccomp:unconfined
     ports:
       - 7000:7000
       - 7001:8000 # default port for python -m http.server
     volumes:
       - ./app:/app
     networks:
-      - ergopad-net
+      - net
+      # - ergopad-net # join existing network
+    depends_on:
+      - danaides-db
     command: uvicorn api:app --reload --workers 1 --reload-dir /app --host 0.0.0.0 --port 7000 --proxy-headers --use-colors
     # command: tail /dev/null -f
 
+  danaides-db:
+    container_name: danaides-db
+    env_file: ${ENV_FILE}
+    image: postgres:14
+    # TODO: still need this?
+    shm_size: 2gb
+    security_opt:
+      - seccomp:unconfined
+    restart: always
+    volumes: 
+      - postgres_vol:/var/lib/postgresql/data:cached
+      - ./app/sql/config/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports: 
+      # can use this or an disable service if existing db
+      - 5435:5432
+    networks:
+      - net
+      # - ergopad-net # join existing network
+
+volumes:
+  postgres_vol:
+
 networks:
-  ergopad-net:
-    external: true
+  net:
+    driver: bridge
+  # ergopad-net:
+  #   external: true

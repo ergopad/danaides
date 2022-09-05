@@ -17,7 +17,7 @@ from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 # GLOBALs
 PRETTYPRINT = False
 VERBOSE = False
-FETCH_INTERVAL = 1500
+FETCH_INTERVAL = 500
 LINELEN = 100
 PLUGINS = dotdict({
     'staking': True, 
@@ -145,18 +145,24 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
 
 # performant API call
 async def get_all(urls) -> dict:
-    retries = 0
-    res = {}
-    while res == {} and (retries < 15):
-        try:
-            res = await get_json_ordered(urls, HEADERS)
-            retries = 15
-        except Exception as e:
-            retries += 1
-            res = {}
-            logger.warning(f'retry: {retries} ({e})')
-            pass
-    return res
+    retries = 1
+    res = {}    
+    while retries > 0:
+        while res == {} and (retries%3 > 0):
+            try:
+                res = await get_json_ordered(urls, HEADERS)
+                retries = 0
+
+            # try, try again
+            except Exception as e:
+                retries += 1
+                res = {}
+                logger.warning(f'retry: {retries} ({e})')
+
+        # cannot ignore this failing since blocks will not be put together in proper order
+        if retries > 0:
+            logger.warning(f'WARN: {retries} retries; sleeping for 1 min.')
+            sleep(60)
 
 # find the current block height
 async def get_height(args, height: int=-1) -> int:
@@ -396,7 +402,8 @@ def cli():
     parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
     parser.add_argument("-B", "--override", help="Process this box", default='')
     parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
-    parser.add_argument("-F", "--fetchinterval", help="Begin at this height", type=int, default=1500)
+    parser.add_argument("-Z", "--sleep", help="Begin at this height", type=int, default=0)
+    parser.add_argument("-F", "--fetchinterval", help="Begin at this height", type=int, default=FETCH_INTERVAL)
     parser.add_argument("-P", "--prettyprint", help="Progress bar vs. scrolling", action='store_true')
     parser.add_argument("-O", "--once", help="When complete, finish", action='store_true')
     parser.add_argument("-X", "--ignoreplugins", help="Only process boxes", action='store_true')
@@ -425,12 +432,12 @@ if __name__ == '__main__':
     
     # sanity check    
     try: 
-        eng.execute('select 1')
+        eng.execute('select service from audit_log where height = -1')
     except OperationalError as e:
         logger.warning(f'unable to init db, waiting 5 seconds and trying again')
         sleep(5)
         try: 
-            eng.execute('select 1')
+            eng.execute('select service from audit_log where height = -1')
         except Exception as e: 
             logger.error(f'ERR: unable to connect to database, has API service initialized objects; {e}')
             try: sys.exit(0)
@@ -438,6 +445,11 @@ if __name__ == '__main__':
 
     # setup
     args = cli()
+
+    # one time sleep
+    if args.sleep > 0:
+        logger.warning(f'initial sleep: {args.sleep}s')
+        sleep(args.sleep)
     
     # create app
     app = App()
@@ -472,7 +484,7 @@ if __name__ == '__main__':
                 asyncio.run(prices.process(is_plugin=True, args=args))
 
             # DROP-N-POP
-            for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia']:
+            for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token']:
                 logger.info(f'main:: {tbl.upper()}...')
                 res = asyncio.run(dnp(tbl))
                 logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
