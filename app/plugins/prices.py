@@ -19,10 +19,6 @@ async def process(is_plugin=False, args=None) -> int:
         t = Timer()
         t.start()
 
-        # handle globals when process called from as plugin
-        if is_plugin and args.prettyprint:
-            PRETTYPRINT = True
-
         # ergodex tokens
         boxes = getErgodexPoolBox() # boxes = list(map(explorerToErgoBox, res["items"]))        
         if VERBOSE: logger.debug(f'{len(boxes)} boxes')
@@ -68,8 +64,15 @@ async def process(is_plugin=False, args=None) -> int:
                         
                         # upsert
                         if id > 0:
+                            max_adjustment = 0.1 # 10%
                             sql = f'''
-                                update tokens set token_price = {price:0.10f}
+                                update tokens 
+                                    set token_price = 
+                                        case
+                                        when {price:0.10f} > (token_price + {max_adjustment}*token_price) then (token_price + {max_adjustment}*token_price)
+                                        when {price:0.10f} < (token_price - {max_adjustment}*token_price) then (token_price - {max_adjustment}*token_price)
+                                        else {price:0.10f}
+                                        end::numeric(32, 10)
                                 where id = {id}
                             '''                            
                         else:
