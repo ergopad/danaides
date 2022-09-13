@@ -32,7 +32,7 @@ create or replace view v_staking as
 			, u.box_id
 			, u.height
 			, (u.assets->'00b1e236b60b95c2c6f8007a9d89bc460fc9e78f98b09faec9449007b40bccf3')::bigint as amount
-			, (u.assets->'012d649686deeef606d253146bec0cf623f9b84574fbfa0fd0d1091393923613')::int as proxy
+			, (u.assets->'1431964fa6559e969a7bf047405d3f63f7592354d432556f79894a12c4286e81')::int as proxy
 			, u.registers->'R4' as penalty
 			, regexp_replace(u.registers->'R5', '^0e20', '') as stakekey_token_id
 			, t.decimals
