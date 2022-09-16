@@ -182,6 +182,7 @@ def getErgodexPoolBox():
                 , registers as "additionalRegisters"
             from utxos 
             where ergo_tree = '{POOL_SAMPLE}'
+                and registers ? 'R4' -- avoid box 378483f674a1463ea63f0aa37a20d6410d1d99e5d9d16fe091a5c23e9849f964
         '''
         with eng.begin() as con: 
             resBox = con.execute(sql).fetchall()
