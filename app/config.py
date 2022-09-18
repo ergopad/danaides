@@ -141,4 +141,12 @@ def get_tables(eng):
         Column('box_id', VARCHAR(64), nullable=False),
     )
     
+    TABLES['token_status'] = Table('token_status', metadata_obj,
+        Column('id', INTEGER, primary_key=True),
+        Column('token_name', VARCHAR(1024), nullable=False),
+        Column('str4', VARCHAR(1024), nullable=False),
+        Column('plr4', VARCHAR(1024), nullable=False),
+        Column('dcml', INTEGER, nullable=False),
+    )
+    
     return metadata_obj, TABLES

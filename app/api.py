@@ -6,10 +6,12 @@ from os import getpid
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from utils.db import init_db
+from concurrent.futures.process import ProcessPoolExecutor
 
 from routes.dashboard import dashboard_router
 from routes.snapshot import snapshot_router
 from routes.token import token_router
+# from routes.tasks import tasks_router   
 
 app = FastAPI(
     title="Danaides",
@@ -21,6 +23,7 @@ app = FastAPI(
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"]) #, dependencies=[Depends(get_current_active_user)])
 app.include_router(snapshot_router, prefix="/api/snapshot", tags=["snapshot"])
 app.include_router(token_router, prefix="/api/token", tags=["token"])
+# app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
 #endregion Routers
 
 # origins = ["*"]
@@ -41,6 +44,11 @@ app.add_middleware(
 @app.on_event("startup")
 async def on_startup():
     await init_db()
+    app.state.executor = ProcessPoolExecutor()
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    app.state.executor.shutdown()
 
 @app.middleware("http")
 async def add_logging_and_process_time(req: Request, call_next):

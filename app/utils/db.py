@@ -17,7 +17,7 @@ def _compile_drop_table(element, compiler, **kwargs):
 
 async def dnp(tbl: str):
     try:
-        if tbl not in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token']:
+        if tbl not in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status']:
             return {
                 'status': 'error', 
                 'message': f'invalid request for table: "{tbl}"', 
