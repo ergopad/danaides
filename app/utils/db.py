@@ -15,7 +15,7 @@ eng = create_engine(DB_DANAIDES)
 def _compile_drop_table(element, compiler, **kwargs):
     return compiler.visit_drop_table(element) + " CASCADE"
 
-async def dnp(tbl: str):
+def dnp(tbl: str):
     try:
         if tbl not in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status']:
             return {
