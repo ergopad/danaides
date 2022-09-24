@@ -2,13 +2,15 @@ import asyncio
 import os, sys, signal
 import pandas as pd
 import argparse
+import requests
 
-from time import sleep
+from time import sleep, time
 from config import dotdict
 from utils.db import eng, text, dnp, build_indexes
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, NODE_API
 from utils.aioreq import get_json_ordered
+# from routes.tasks import drop_n_pop
 from sqlalchemy.exc import OperationalError
 from plugins import prices, utxo, token
 from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
@@ -462,10 +464,16 @@ if __name__ == '__main__':
     
     # process loop
     height = args.height # first time
+    block_timer = {}
     while not app.shutdown:
         try:
             # build boxes, tokens tables
             height = asyncio.run(app.process(args, height))
+            block_timer[height] = round(time()*1000)
+            
+            # ?? is this best place to track this?  ...hibernate prob better, as long as includes main look processing time
+            # if height-1 in block_timer:
+            #     logger.log(LEIF, f'previous block processed in {block_timer[height]-block_timer[height-1]}s')
 
             ## -----------
             ## - PLUGINS -
@@ -488,15 +496,15 @@ if __name__ == '__main__':
                 logger.warning('main:: PLUGIN: Prices...')
                 asyncio.run(prices.process(is_plugin=True, args=args))
 
-            # DROP-N-POP
+            # DROP-N-POP - handle in background tasks
             for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status']:
-                logger.info(f'main:: {tbl.upper()}...')
-                res = asyncio.run(dnp(tbl))
-                logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
-
-            # rebuild indexes after drop'n'pop
-            # logger.debug(f'''main:: build indexes''')
-            # asyncio.run(build_indexes())
+                try:
+                    res = requests.get(f'http://danaides-api:7000/api/tasks/dnp/{tbl}')
+                    logger.info(f'''main:: {tbl.upper()}: {res.json()}...''')
+                    # res = asyncio.run(dnp(tbl))
+                    # logger.debug(f'''main:: {tbl.upper()} complete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
+                except Exception as e:
+                    logger.error(f'ERR: drop-n-pop {e}')
 
             # quit or wait for next block
             if args.once:

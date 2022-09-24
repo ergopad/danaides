@@ -40,3 +40,4 @@ create or replace view v_vesting as
 		-- filter to only vesting keys
 		join a on a.token_id = v.vesting_key_id
 ;
+
