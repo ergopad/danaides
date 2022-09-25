@@ -7,7 +7,6 @@ pandas
 
 fastapi
 uvicorn
-fastapi-utils
 
 sqlalchemy
 # not using psycopg2-binary due to aarm64 compatibility issue
