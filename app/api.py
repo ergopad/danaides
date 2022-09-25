@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from utils.db import init_db
 from concurrent.futures.process import ProcessPoolExecutor
 
-from routes.dashboard import dashboard_router
+# from routes.dashboard import dashboard_router
 from routes.snapshot import snapshot_router
 from routes.token import token_router
 # from routes.tasks import tasks_router   
@@ -20,7 +20,7 @@ app = FastAPI(
 )
 
 #region Routers
-app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"]) #, dependencies=[Depends(get_current_active_user)])
+# app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"]) #, dependencies=[Depends(get_current_active_user)])
 app.include_router(snapshot_router, prefix="/api/snapshot", tags=["snapshot"])
 app.include_router(token_router, prefix="/api/token", tags=["token"])
 # app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
@@ -72,4 +72,4 @@ async def ping():
 
 # MAIN
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", reload=True, port=8000)
+    uvicorn.run("api:app", host="0.0.0.0", reload=True, port=8000)
