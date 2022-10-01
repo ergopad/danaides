@@ -148,5 +148,32 @@ def get_tables(eng):
         Column('plr4', VARCHAR(1024), nullable=False),
         Column('dcml', INTEGER, nullable=False),
     )
+
+    TABLES['token_free'] = Table('token_free', metadata_obj,
+        Column('id', INTEGER, primary_key=True),
+        Column('address', VARCHAR(64), nullable=False),
+        Column('amount', NUMERIC(32, 10), nullable=False),
+    )
+
+    TABLES['token_staked'] = Table('token_staked', metadata_obj,
+        Column('id', INTEGER, primary_key=True),
+        Column('box_id', VARCHAR(1024), nullable=False),
+        Column('height', INTEGER, nullable=False),
+        Column('amount', NUMERIC(32, 0), nullable=False),
+        Column('proxy', INTEGER, nullable=False),
+        Column('penalty', VARCHAR(64), nullable=False),
+        Column('decimals', INTEGER, nullable=False),
+        Column('token_id', VARCHAR(64), nullable=False),
+    )
+
+    TABLES['token_locked'] = Table('token_locked', metadata_obj,
+        Column('id', INTEGER, primary_key=True),
+        Column('address', VARCHAR(64), nullable=False),
+        Column('token_id', VARCHAR(64), nullable=False),
+        Column('box_id', VARCHAR(1024), nullable=False),
+        Column('stakekey_token_id', VARCHAR(64), nullable=False),
+        Column('amount', NUMERIC(32, 0), nullable=False),
+        Column('penalty', VARCHAR(64), nullable=False),
+    )
     
     return metadata_obj, TABLES

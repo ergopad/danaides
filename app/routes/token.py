@@ -29,75 +29,21 @@ class TokenInventoryDAO(BaseModel):
 @r.post("/locked/")
 async def locked(tid: TokenInventoryDAO):
     
+    # TODO: validate address
     addresses = "'"+("','".join(tid.addresses))+"'"
 
-    # validate token, ergo_tree and proxy
-    sql = f'''
-        select count(*) as i 
-        from tokens 
-        where token_id = :token_id
-    '''
-    # with eng.begin() as con:
-    #     res = con.execute(sql, {'token_id': tid.token_id}).fetchall()
-
+    # find free/staked tokens
     sql = text(f'''
-        with 
-        -- free tokens
-        fre as (
-            select address, a.amount
-            from assets a
-            where a.token_id = :token_id -- Paideia
-                and address in ({addresses})
-        )
-        -- staked
-        , stk as (
-                select -- '[staked token name]' as project_name
-                    u.box_id
-                    , u.height
-                    , (u.assets->{tid.token_id!r})::bigint as amount
-                    , (u.assets->{tid.proxy_address!r})::int as proxy
-                    , u.registers->'R4' as penalty
-                    , regexp_replace(u.registers->'R5', '^0e20', '') as stakekey_token_id
-                    , t.decimals
-                    , t.token_id
-                from utxos u
-                    join tokens t on t.token_id = :token_id
-                where ergo_tree = :stake_tree
-        )
-        , adr as (
-            select 
-                address
-                , id
-                , (each(assets)).key::varchar(64) as token_id
-                , (each(assets)).value::bigint as amount
-            from utxos
-            where address in ({addresses})
-        )
-        , stkqty as (
-            select
-                adr.address
-                , u.token_id
-                , u.box_id
-                , u.stakekey_token_id
-                , u.amount/power(10, u.decimals) as amount
-                , u.penalty
-            from stk u
-                join adr on adr.token_id = u.stakekey_token_id
-            where proxy = 1
-        ) -- select * from stkqty
-        , vst as (
-            select 1
-        )
-
         select coalesce(fre.amount, 0) as individual_free
             , coalesce(stk.amount, 0) as individual_staked
             , 0 as individual_vested -- hack for now
             , coalesce(fre.address, stk.address) as address
         from fre
         full outer join stkqty stk on stk.address = fre.address
+        where coalesce(fre.address, stk.address) in ({addresses})
     ''')
     with eng.begin() as con:
-        res = con.execute(sql, {'token_id': tid.token_id, 'stake_tree': tid.stake_tree}).fetchall()
+        res = con.execute(sql).fetchall()
 
     # make sure all addresses exist in final set
     individual_free = {}

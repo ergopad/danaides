@@ -17,7 +17,7 @@ def _compile_drop_table(element, compiler, **kwargs):
 
 async def dnp(tbl: str):
     try:
-        if tbl not in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status']:
+        if tbl not in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status', 'token_free', 'token_staked', 'token_locked']:
             return {
                 'status': 'error', 
                 'message': f'invalid request for table: "{tbl}"', 
@@ -160,7 +160,7 @@ async def init_db():
         view_dir = '/app/sql/views'
         with eng.begin() as con:
             views = listdir(view_dir)
-            for v in views:
+            for v in sorted(views):
                 if v.startswith('v_') and v.endswith('.sql'):
                     with open(path.join(view_dir, v), 'r') as f:
                         sql = f.read()

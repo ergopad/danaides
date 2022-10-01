@@ -489,7 +489,7 @@ if __name__ == '__main__':
                 asyncio.run(prices.process(is_plugin=True, args=args))
 
             # DROP-N-POP
-            for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status']:
+            for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status', 'token_free', 'token_staked', 'token_locked']:
                 logger.info(f'main:: {tbl.upper()}...')
                 res = asyncio.run(dnp(tbl))
                 logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
