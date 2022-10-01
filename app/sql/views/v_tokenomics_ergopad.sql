@@ -11,7 +11,7 @@ create or replace view v_tokenomics_ergopad as
 		select sum(coalesce(amount, 0)) as amount
 		from assets
 		where ergo_tree = '10070400040204000500040004000400d80bd601e4c6a7040ed602b2db6308a7730000d6038c720201d604e4c6a70805d605e4c6a70705d606e4c6a70505d607e4c6a70605d6089c9d99db6903db6503fe720572067207d6098c720202d60a9972047209d60b958f99720472087207997204720a997208720ad1ed93b0b5a5d9010c63ededed93c2720c720193e4c6720c040ee4c6a7090e93b1db6308720c7301938cb2db6308720c7302000172037303d9010c41639a8c720c018cb2db63088c720c0273040002720bec937209720baea5d9010c63ededededededededed93c1720cc1a793c2720cc2a7938cb2db6308720c730500017203938cb2db6308720c73060002997209720b93e4c6720c040e720193e4c6720c0505720693e4c6720c0605720793e4c6720c0705720593e4c6720c0805720493e4c6720c090ee4c6a7090e'
-	)
+	) 
 	-- emitted
 	, emitted as (
 		select sum(coalesce(amount, 0)) as amount
@@ -52,20 +52,20 @@ create or replace view v_tokenomics_ergopad as
 		, t.decimals
 		, t.token_price 
 		
-        , vested as vested
+        , coalesce(vested, 0.0) as vested
         , staked as staked
         , emitted as emitted
         , stake_pool as stake_pool
         , supply as supply
-		, supply - vested - emitted - stake_pool as in_circulation
+		, supply - coalesce(vested, 0.0) - emitted - stake_pool as in_circulation
 
 		-- w/decimals
-		, (vested/power(10, t.decimals))::decimal(32, 2) as vested_actual
+		, (coalesce(vested, 0.0)/power(10, t.decimals))::decimal(32, 2) as vested_actual
         , (staked/power(10, t.decimals))::decimal(32, 2) as staked_actual
         , (emitted/power(10, t.decimals))::decimal(32, 2) as emitted_actual
         , (stake_pool/power(10, t.decimals))::decimal(32, 2) as stake_pool_actual
         , (supply/power(10, t.decimals))::decimal(32, 2) as supply_actual
-		, ((supply - vested - emitted - stake_pool)/decimals)::decimal(32, 2) as in_circulation_actual
+		, ((supply - coalesce(vested, 0.0) - emitted - stake_pool)/decimals)::decimal(32, 2) as in_circulation_actual
     from vals v
 		join tokens t on t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
 ;
