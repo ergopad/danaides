@@ -34,13 +34,19 @@ async def locked(tid: TokenInventoryDAO):
 
     # find free/staked tokens
     sql = text(f'''
-        select coalesce(fre.amount, 0) as individual_free
-            , coalesce(stk.amount, 0) as individual_staked
+		with fre as (
+			select sum(amount) as amount, address 
+			from token_free 
+			group by address
+		)
+		select max(fre.amount) as individual_free
+            , sum(coalesce(stk.amount, 0)) as individual_staked
             , 0 as individual_vested -- hack for now
             , coalesce(fre.address, stk.address) as address
         from fre
-        full outer join stkqty stk on stk.address = fre.address
-        where coalesce(fre.address, stk.address) in ({addresses})
+        full outer join token_locked stk on stk.address = fre.address
+		where coalesce(fre.address, stk.address) in ({addresses})
+		group by coalesce(fre.address, stk.address)
     ''')
     with eng.begin() as con:
         res = con.execute(sql).fetchall()
