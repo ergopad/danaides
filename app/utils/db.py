@@ -25,6 +25,9 @@ async def dnp(tbl: str):
                 'row_count_after': -1,
             }
 
+        # recreate dependencies, etc.. drop and pop can be messy
+        await init_db()
+
         metadata_obj, TABLES = get_tables(eng)
         src = TABLES[tbl]
         tmp_table = f'tmp_{tbl}'
