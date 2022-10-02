@@ -39,7 +39,7 @@ async def locked(tid: TokenInventoryDAO):
 			from token_free 
 			group by address
 		)
-		select max(fre.amount) as individual_free
+		select max(coalesce(fre.amount, 0)) as individual_free
             , sum(coalesce(stk.amount, 0)) as individual_staked
             , 0 as individual_vested -- hack for now
             , coalesce(fre.address, stk.address) as address
