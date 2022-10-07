@@ -14,7 +14,7 @@ from utils.logger import logger, myself
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 from typing import Dict
-from http import HTTPStatus
+# from http import HTTPStatus
 
 # from routes.dashboard import dashboard_router
 from routes.snapshot import snapshot_router
@@ -68,36 +68,7 @@ async def on_startup():
     init_db()
     
     logger.debug('refresh materialized views')
-    refresh_views()
-
-@app.on_event("startup")
-@repeat_every(seconds=JOB_CHECK_INTERVAL)
-def cleanup_jobs() -> None:
-    try:
-        logger.debug(f'job:: cleanup\n  currently stored: {len(jobs)}')
-
-        # find the keys
-        del_keys = []
-        for uid in jobs:
-            # if older than 5m from finish
-            if jobs[uid].end__ms < (time()-60*CLEANUP_INTERVAL)*1000:
-                # logger.warning(f'{uid} needs to be cleaned')
-                del_keys.append(uid)
-                # logger.debug(f'key found {uid}')
-
-        # remove from jobs dict
-        for uid in del_keys:
-            logger.warning(f'removing {uid}')
-            # jobs.pop(uid, None) # attempt to remove regardless if exists in dict or not
-            del jobs[uid]
-            logger.warning(f'job:: cleanup task {uid}')
-
-    except Exception as e:
-        logger.error(f'ERR: {myself()}, {e}')
-        
-# @app.on_event("shutdown")
-# async def on_shutdown():
-#     app.state.executor.shutdown()
+    refresh_views(concurrently=False)
 
 @app.middleware("http")
 async def add_logging_and_process_time(req: Request, call_next):
@@ -113,60 +84,6 @@ async def add_logging_and_process_time(req: Request, call_next):
     except Exception as e:
         logging.debug(e)
         return resNext
-
-# drop and pop table
-# @app.get("/api/tasks/dnp/{tbl}", status_code=HTTPStatus.ACCEPTED)
-# async def drop_n_pop(tbl: str, background_tasks: BackgroundTasks):
-#     try:
-#         if tbl in [jobs[j].params['tbl'] for j in jobs if jobs[j].status == 'in_progress']:
-#             uid = str([j for j in jobs if jobs[j].status == 'in_progress' and (jobs[j].params['tbl'] == tbl)][0])
-#             logger.info(f'job currently processing; {uid}')        
-#         else:
-#             new_task = Job()
-#             uid = str(new_task.uid)
-#             jobs[new_task.uid] = new_task
-#             jobs[new_task.uid].params['tbl'] = tbl
-#             jobs[new_task.uid].start__ms = round(time() * 1000)        
-#             res = await run_in_threadpool(lambda: dnp(tbl))
-#             logger.debug(f'job {uid} status: {res}')
-#             jobs[new_task.uid].status = 'complete'  
-#             jobs[new_task.uid].end__ms = round(time() * 1000)
-#             # jobs[new_task.uid].status = res['row_count_after']
-#             
-#         return {'uid': uid, 'table_name': tbl, 'status': 'in_process'}
-# 
-#     except Exception as e:
-#         logger.error(f'ERR: {myself()}, {e}')
-
-# get status, given uid
-# @app.get("/api/tasks/status/{uid}")
-# async def status_handler(uid: UUID):
-#     if uid in jobs:
-#         status = jobs[uid].status
-#         if status == 'complete': elapsed = (jobs[uid].end__ms-jobs[uid].start__ms)/1000.0
-#         else: elapsed = (round(time() * 1000)-jobs[uid].start__ms)/1000.0
-#     else:
-#         status = 'not_found'
-#         elapsed = None
-# 
-#     return {
-#         'uid': uid,
-#         'status': status,
-#         'elapsed__sec': elapsed
-#     }
-
-# @app.get("/api/tasks/alljobs")
-# async def all_jobs():
-#     return jobs
-
-# @app.get("/api/tasks/pending")
-# async def all_jobs():
-#     res = {}
-#     for uid in jobs:
-#         if jobs[uid].status == 'in_progress':
-#             res[uid] = (round(time() * 1000)-jobs[uid].start__ms)/1000.0
-# 
-#     return res
 
 @app.get("/api/ping")
 async def ping():

@@ -100,7 +100,7 @@ def init_db():
     except Exception as e:
         logger.error(f'ERR: {e}')
 
-def refresh_views():
+def refresh_views(concurrently=True):
     try:
         # refresh all the views in background thread? (will take some time)
         # after first refresh, concurrently can be used
@@ -114,7 +114,7 @@ def refresh_views():
         with eng.begin() as con:
             res = con.execute(sql).fetchall()
             for mv in res:
-                sql = f'''refresh materialized view {mv['matviewname']}'''
+                sql = f'''refresh materialized view {('', 'concurrently')[concurrently]} {mv['matviewname']}'''
                 con.execute(sql)
 
         logger.debug('refresh materialized views complete.')
