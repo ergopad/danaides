@@ -2,19 +2,21 @@ import asyncio
 import os, sys, signal
 import pandas as pd
 import argparse
+import requests
 
-from time import sleep
+from time import sleep, time
 from config import dotdict
-from utils.db import eng, text, dnp, build_indexes
+from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, NODE_API
 from utils.aioreq import get_json_ordered
 from sqlalchemy.exc import OperationalError
 from plugins import prices, utxo, token
-from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
+# from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 #region INIT
 # GLOBALs
+RECENT_BLOCKS = {}
 PRETTYPRINT = False
 VERBOSE = False
 FETCH_INTERVAL = 500
@@ -41,7 +43,7 @@ async def del_inputs(inputs: dict, unspent: dict, height: int=-1) -> dict:
             try:
                 # new[box_id] = height
                 new[box_id] = {
-                    'height': height, # -1 indicates spent; see checkpoint (is_unspent in checkpoint_boxes table)
+                    'height': height, # -1 indicates spent; see checkpoint (is_unspent in checkpoint.boxes table)
                     'nergs': 0
                 }
             except Exception as e:
@@ -87,8 +89,8 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
             'nerg': [n['nergs'] for n in unspent.values()],
             'is_unspent': [n['height']!=-1 for n in unspent.values()], # [b!=-1 for b in list(unspent.values())]
         })
-        df.to_sql(f'checkpoint_{BOXES}', eng, if_exists='replace')
-        if VERBOSE: logger.debug(f'checkpoint_boxes: {height}')
+        df.to_sql(f'{BOXES}', eng, schema='checkpoint', if_exists='replace')
+        if VERBOSE: logger.debug(f'checkpoint.boxes: {height}')
 
         # execute as transaction
         with eng.begin() as con:
@@ -96,7 +98,7 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
             sql = f'''
                 with spent as (
                     select box_id
-                    from checkpoint_{BOXES}
+                    from checkpoint.{BOXES}
                     where is_unspent::boolean = false
                 )
                 delete from {BOXES} t
@@ -111,7 +113,7 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
             sql = f'''
                 insert into {BOXES} (box_id, height, is_unspent, nerg)
                     select c.box_id, c.height, c.is_unspent, c.nerg
-                    from checkpoint_{BOXES} c
+                    from checkpoint.{BOXES} c
                         left join {BOXES} b on b.box_id = c.box_id
                     where c.is_unspent::boolean = true
                         and b.box_id is null
@@ -354,7 +356,20 @@ class App:
             '''
             with eng.begin() as con:
                 res = con.execute(sql) 
+            
+            # if len(RECENT_BLOCKS) >= 10:
+            #     blkavg = 0
+            #     block_times = sorted(RECENT_BLOCKS.keys())
+            #     last_time = RECENT_BLOCKS[block_times[-10:-9]]
+            #     for blk in block_times[-9:]:
+            #         blkavg += RECENT_BLOCKS[blk] - last_time
+            #         last_time = RECENT_BLOCKS[blk]
+            #     logger.warning(f'last 10 blocks avg time: {blkavg/10:0.4f}')
+            # else:
+            #     logger.warning(f'not enough blocks to compute average yet ({len(RECENT_BLOCKS)})')
+
             logger.warning('\n\t'+'\n\t'.join([f'''main.hibernate:: {r['tbl']}: {r['i']} rows, {r['j']} height''' for r in res]))
+
 
             # chill for next block
             logger.debug('Hibernating...')
@@ -377,6 +392,9 @@ class App:
                     last_height = -1
                     try: sys.exit(0)
                     except SystemExit: os._exit(0)
+
+            # new block found
+            RECENT_BLOCKS[current_height] = time()
 
             # cleanup audit log
             logger.debug('Cleanup audit log...')
@@ -490,9 +508,14 @@ if __name__ == '__main__':
 
             # DROP-N-POP
             for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status', 'token_free', 'token_staked', 'token_locked']:
-                logger.info(f'main:: {tbl.upper()}...')
-                res = asyncio.run(dnp(tbl))
-                logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
+                logger.debug(f'refreshing matview {tbl}')
+                res = requests.get(f'http://danaides-api:7000/api/tasks/refresh/{tbl.lower()}/')
+                if res.ok:
+                    logger.info(f'''main:: refresh {tbl.upper()} complete''')
+                    # logger.info(f'''main:: processing table {tbl.upper()}, uid: {res.json()['uid']}''')
+                else:
+                    logger.error(f'main:: error requesting refresh for table, {tbl.upper()}...')
+                # logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
 
             # rebuild indexes after drop'n'pop
             # logger.debug(f'''main:: build indexes''')

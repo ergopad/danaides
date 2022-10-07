@@ -1,7 +1,6 @@
 -- find these values in github/ergo-paid/paideia-contracts/contract/staking/__init__.py
 
--- select * into token_status from v_token_status 
-create or replace view v_token_status as
+create materialized view token_status as
 	with 
 	-- paideia
 	  paideia_st as (select registers->'R4' as r4 from utxos where assets ? 'b682ad9e8c56c5a0ba7fe2d3d9b2fbd40af989e8870628f4a03ae1022d36f091' limit 1)
@@ -24,3 +23,7 @@ create or replace view v_token_status as
 	union select 'egio' as token_name, egio_st.r4 as str4, egio_pl.r4 as plr4, 4 from egio_st, egio_pl
 	union select 'egiov2' as token_name, egiov2_st.r4 as str4, egiov2_pl.r4 as plr4, 4 from egiov2_st, egiov2_pl
 	union select 'neta' as token_name, neta_st.r4 as str4, neta_pl.r4 as plr4, 6 from neta_st, neta_pl
+
+    with no data;
+
+create unique index uq_token_status on token_status (token_name);

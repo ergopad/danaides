@@ -17,6 +17,7 @@ grant all privileges on database danaides to pirene;
 grant connect on database danaides TO pirene;
 
 alter default privileges in schema public grant select, insert, update, delete on tables to pirene;
+alter default privileges in schema checkpoint grant select, insert, update, delete on tables to pirene;
 alter default privileges in schema public grant usage on sequences to pirene;
 
 grant create on schema public to pirene;

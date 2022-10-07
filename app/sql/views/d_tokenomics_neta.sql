@@ -1,4 +1,4 @@
-create or replace view v_tokenomics_neta as
+create materialized view tokenomics_neta as
 	with 
     assets as (
         select (each(assets)).key as token_id
@@ -69,4 +69,7 @@ create or replace view v_tokenomics_neta as
 		, ((supply - vested - emitted - stake_pool)/decimals)::decimal(32, 2) as in_circulation_actual
     from vals v
 		join tokens t on t.token_id = '472c3d4ecaa08fb7392ff041ee2e6af75f4a558810a74b28600549d5392810e8'
-;
+
+    with no data;
+
+create unique index uq_tokenomics_neta on tokenomics_neta (token_id);
