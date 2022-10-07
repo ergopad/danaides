@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi_utils.tasks import repeat_every
 # from fastapi.concurrency import run_in_threadpool
 from utils.db import init_db, refresh_views
-from utils.logger import logger, myself
+from utils.logger import logger, myself, LEIF
 # from concurrent.futures.process import ProcessPoolExecutor
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
@@ -50,7 +50,7 @@ app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
 # origins = ["*"]
 origins = [
     "https://*.ergopad.io",
-    "http://75.155.140.173:3000"
+    "https://*.paideia.im"
 ]
 
 app.add_middleware(
@@ -64,25 +64,34 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup():
-    logger.debug('init database')
-    init_db()
-    
-    logger.debug('refresh materialized views')
-    refresh_views(concurrently=False)
+    try:
+        logger.debug('init database')
+        init_db()
+        
+        logger.debug('refresh materialized views')
+        # first time, make sure to refresh for matviews created, "with no data"
+        refresh_views(concurrently=False)
+
+    except Exception as e:
+        logger.error(f'ERR: {myself()}; {e}')
 
 @app.middleware("http")
 async def add_logging_and_process_time(req: Request, call_next):
     try:
-        logging.debug(f"""### REQUEST: {req.url} | host: {req.client.host}:{req.client.port} | pid {getpid()} ###""")
+        try: 
+            logger.log(LEIF, f"""REQUEST: {req.url} | host: {req.client.host}:{req.client.port} | pid {getpid()}""")
+        except Exception as e: 
+            logger.log(LEIF, f"""REQUEST ERROR: {e}""")
+            pass
         beg = time()
         resNext = await call_next(req)
         tot = f'{time()-beg:0.3f}'
         resNext.headers["X-Process-Time-MS"] = tot
-        logging.debug(f"""### %%% TOOK {tot} / ({req.url}) %%% ###""")
+        logger.log(LEIF, f"""TOOK {tot} / ({req.url})""")
         return resNext
 
     except Exception as e:
-        logging.debug(e)
+        logger.error(f'ERR: {myself()}; {e}')
         return resNext
 
 @app.get("/api/ping")

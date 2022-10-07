@@ -1,6 +1,6 @@
 # import asyncio
 
-from utils.logger import logger
+from utils.logger import logger, myself
 # from concurrent.futures.process import ProcessPoolExecutor
 from http import HTTPStatus
 from time import time
@@ -20,7 +20,7 @@ async def refresh_matview(matview):
             con.execute(sql)
 
     except Exception as e:
-        logger.error(f'ERR: {e}')
+        logger.error(f'ERR: {myself()}; {e}')
 
 @r.get("/refreshall/")
 async def refresh_all_matviews(matview):
@@ -44,15 +44,6 @@ async def refresh_all_matviews(matview):
                 pass
 
     except Exception as e:
-        logger.error(f'ERR: {e}')
-
-# get status, given uid
-@r.get("/status/{uid}")
-async def status_handler(uid: UUID):
-    return {
-        'uid': jobs[uid],
-        'status': jobs[uid].status,
-        'elapsed__sec': time()-jobs[uid].start
-    }
+        logger.error(f'ERR: {myself()}; {e}')
 
 ### MAIN

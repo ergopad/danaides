@@ -41,5 +41,6 @@ async def snapshot(token: Token):
         }
 
     except Exception as e:
-        logger.error(f'ERR: {e}')
-        return {}
+        logger.error(f'ERR: {myself()}; {e}')
+
+    return {}
