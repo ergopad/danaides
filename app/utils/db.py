@@ -1,12 +1,13 @@
 from os import path, listdir, getenv
-from sqlalchemy import create_engine, inspect, text, MetaData, Table
+from sqlalchemy import create_engine
 from sqlalchemy.schema import DropTable
 from sqlalchemy.ext.compiler import compiles
-from utils.logger import logger, Timer, printProgressBar
+from utils.logger import logger, myself
 from config import get_tables
-from string import ascii_uppercase, digits
-from random import choices
 from time import sleep
+# from sqlalchemy import create_engine, inspect, text, MetaData, Table
+# from string import ascii_uppercase, digits
+# from random import choices
 
 DB_DANAIDES = f"postgresql://{getenv('DANAIDES_USER')}:{getenv('DANAIDES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DB')}"
 eng = create_engine(DB_DANAIDES)
@@ -120,7 +121,7 @@ def refresh_views(concurrently=True):
         logger.debug('refresh materialized views complete.')
 
     except Exception as e:
-        logger.error(f'ERR: {e}')
+        logger.error(f'ERR: {myself()}; {e}')
 
 # build all indexes
 async def build_indexes():
@@ -147,4 +148,4 @@ async def build_tmp(tbl:str):
         tmp.create() 
         
     except Exception as e:
-        logger.error(f'ERR: {e}')
+        logger.error(f'ERR: {myself()}; {e}')

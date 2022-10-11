@@ -1,25 +1,24 @@
 import uvicorn
-import logging
-# import asyncio
 
 from time import time
 from os import getpid
-from fastapi import FastAPI, Depends, Request # , BackgroundTasks
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi_utils.tasks import repeat_every
-# from fastapi.concurrency import run_in_threadpool
 from utils.db import init_db, refresh_views
 from utils.logger import logger, myself, LEIF
-# from concurrent.futures.process import ProcessPoolExecutor
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 from typing import Dict
+# from fastapi import BackgroundTasks
+# from fastapi_utils.tasks import repeat_every
+# from fastapi.concurrency import run_in_threadpool
+# from concurrent.futures.process import ProcessPoolExecutor
 # from http import HTTPStatus
 
-# from routes.dashboard import dashboard_router
 from routes.snapshot import snapshot_router
 from routes.token import token_router
 from routes.tasks import tasks_router
+# from routes.dashboard import dashboard_router
 
 app = FastAPI(
     title="Danaides",
@@ -41,18 +40,16 @@ class Job(BaseModel):
 jobs: Dict[UUID, Job] = {}
 
 #region Routers
-# app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"]) #, dependencies=[Depends(get_current_active_user)])
 app.include_router(snapshot_router, prefix="/api/snapshot", tags=["snapshot"])
 app.include_router(token_router, prefix="/api/token", tags=["token"])
 app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
+# app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"]) #, dependencies=[Depends(get_current_active_user)])
 #endregion Routers
 
-# origins = ["*"]
 origins = [
     "https://*.ergopad.io",
     "https://*.paideia.im"
 ]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -84,15 +81,15 @@ async def add_logging_and_process_time(req: Request, call_next):
             logger.log(LEIF, f"""REQUEST ERROR: {e}""")
             pass
         beg = time()
-        resNext = await call_next(req)
+        res_next = await call_next(req)
         tot = f'{time()-beg:0.3f}'
-        resNext.headers["X-Process-Time-MS"] = tot
+        res_next.headers["X-Process-Time-MS"] = tot
         logger.log(LEIF, f"""TOOK {tot} / ({req.url})""")
-        return resNext
+        return res_next
 
     except Exception as e:
         logger.error(f'ERR: {myself()}; {e}')
-        return resNext
+        return res_next
 
 @app.get("/api/ping")
 async def ping():
