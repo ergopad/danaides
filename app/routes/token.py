@@ -28,150 +28,157 @@ class TokenInventoryDAO(BaseModel):
 
 @r.post("/locked/")
 async def locked(tid: TokenInventoryDAO):
-    
-    # TODO: validate address
-    addresses = "'"+("','".join(tid.addresses))+"'"
+    try:
+        # TODO: validate address
+        addresses = "'"+("','".join(tid.addresses))+"'"
 
-    # find free/staked tokens
-    sql = text(f'''
-		with fre as (
-			select sum(amount) as amount, address 
-			from token_free 
-			group by address
-		)
-		select max(coalesce(fre.amount, 0)) as individual_free
-            , sum(coalesce(stk.amount, 0)) as individual_staked
-            , 0 as individual_vested -- hack for now
-            , coalesce(fre.address, stk.address) as address
-        from fre
-        full outer join token_locked stk on stk.address = fre.address
-		where coalesce(fre.address, stk.address) in ({addresses})
-		group by coalesce(fre.address, stk.address)
-    ''')
-    with eng.begin() as con:
-        res = con.execute(sql).fetchall()
+        # find free/staked tokens
+        sql = text(f'''
+            with fre as (
+                select sum(amount) as amount, address 
+                from token_free 
+                group by address
+            )
+            select max(coalesce(fre.amount, 0)) as individual_free
+                , sum(coalesce(stk.amount, 0)) as individual_staked
+                , 0 as individual_vested -- hack for now
+                , coalesce(fre.address, stk.address) as address
+            from fre
+            full outer join token_locked stk on stk.address = fre.address
+            where coalesce(fre.address, stk.address) in ({addresses})
+            group by coalesce(fre.address, stk.address)
+        ''')
+        with eng.begin() as con:
+            res = con.execute(sql).fetchall()
 
-    # make sure all addresses exist in final set
-    individual_free = {}
-    individual_staked = {}
-    individual_vested = {}
-    for adr in tid.addresses:
-        individual_free[adr] = Decimal('0')
-        individual_staked[adr] = Decimal('0')
-        individual_vested[adr] = Decimal('0')
+        # make sure all addresses exist in final set
+        individual_free = {}
+        individual_staked = {}
+        individual_vested = {}
+        for adr in tid.addresses:
+            individual_free[adr] = Decimal('0')
+            individual_staked[adr] = Decimal('0')
+            individual_vested[adr] = Decimal('0')
 
-    # add any that have qty
-    totals = {
-        'grand': Decimal('0'),
-        'free': Decimal('0'),
-        'staked': Decimal('0'),
-        'vested': Decimal('0'),
-    }
-    for row in res:
-        individual_free[row['address']] = row['individual_free']
-        individual_staked[row['address']] = row['individual_staked']
-        individual_vested[row['address']] = row['individual_vested']
-        totals['free'] += Decimal(row['individual_free'])
-        totals['staked'] += Decimal(row['individual_staked'])
-        totals['vested'] += Decimal(row['individual_vested'])
-        totals['grand'] += Decimal(row['individual_free']) + Decimal(row['individual_staked']) + Decimal(row['individual_vested'])
-    
-    return {
-        'totalTokens': totals['grand'],
-        'totalFree': totals['free'],
-        'totalStaked': totals['staked'],
-        'totalVested': totals['vested'],
+        # add any that have qty
+        totals = {
+            'grand': Decimal('0'),
+            'free': Decimal('0'),
+            'staked': Decimal('0'),
+            'vested': Decimal('0'),
+        }
+        for row in res:
+            individual_free[row['address']] = row['individual_free']
+            individual_staked[row['address']] = row['individual_staked']
+            individual_vested[row['address']] = row['individual_vested']
+            totals['free'] += Decimal(row['individual_free'])
+            totals['staked'] += Decimal(row['individual_staked'])
+            totals['vested'] += Decimal(row['individual_vested'])
+            totals['grand'] += Decimal(row['individual_free']) + Decimal(row['individual_staked']) + Decimal(row['individual_vested'])
+        
+        return {
+            'totalTokens': totals['grand'],
+            'totalFree': totals['free'],
+            'totalStaked': totals['staked'],
+            'totalVested': totals['vested'],
 
-        'free': individual_free,        
-        'staked': individual_staked,        
-        'vested': individual_vested,
-    }
+            'free': individual_free,        
+            'staked': individual_staked,        
+            'vested': individual_vested,
+        }
+
+    except Exception as e:
+        logger.error(f'ERR: {myself()}; {e}')
 
 @r.post("/burn/")
 async def burn(token: Token):
-    # check is valid token
-    logger.debug(f'burning token: {token.id}')
+    try:
+        # check is valid token
+        logger.debug(f'burning token: {token.id}')
 
-    token_id = token.id
-    token_name = 'xyzpad'
-    burn_address = ''
-    wallet_address = ''
-    value = 1
-    fee = .01
-    decimals = 2
-    burn_amount = 100
-    emission = 1000
+        token_id = token.id
+        token_name = 'xyzpad'
+        burn_address = ''
+        wallet_address = ''
+        value = 1
+        fee = .01
+        decimals = 2
+        burn_amount = 100
+        emission = 1000
 
-    tx = {
-        "inputs": [
-            {
-                "boxId":"f74ce7a954d63e4ca4089db2b21377f91a5206567fa482acf58c1600550bd7af",
-                "transactionId":"4af200f4da9eab7b33beca14dd8e4d4f21fd06b57f182ccdc5f7d499271fc327",
-                "index":2,
-                "ergoTree":"0008cd029bb1317f5fa5678961b88f7a12c87ffd10b9a132d962c697acd0698d0b0c75fc",
-                "creationHeight":765238,
-                "value":"4640094783",
-                "assets":[
-                    {"tokenId":"8b70d5e59232d6437a74afec8d0eca20c00abaccd2518dbccf0ecde918b8831a","amount":"999000000"},
-                    {"tokenId":"42ad11164cb217a7ed5327c4c235a49e801655486220c33de5ae7460f49dbfd1","amount":"1"},
-                    {"tokenId":"3e6df7dbf3c48748ae74b94cbee4b2e3ec5c4522138e0a1898e8edbe0bfb5ddb","amount":"1"},
-                    {"tokenId":"03faf2cb329f2e90d6d23b58d91bbb6c046aa143261cc21f52fbe2824bfcbf04","amount":"2500"},
-                    {"tokenId":"001475b06ed4d2a2fe1e244c951b4c70d924b933b9ee05227f2f2da7d6f46fd3","amount":"489900000"},
-                    {"tokenId":"0f034551879db5880d227c855fc533d6fc8740dcc9670846fa1818bd80c8c727","amount":"208219"}
-                ],
-                "additionalRegisters":{},
-                "confirmed":True,
-                "extension":{}
-            }
-        ],
-        "dataInputs":[],
-        "outputs": [
-            {
-                "value":"2000000",
-                "ergoTree":"0008cd029bb1317f5fa5678961b88f7a12c87ffd10b9a132d962c697acd0698d0b0c75fc",
-                "assets":[],
-                "additionalRegisters":{},
-                "creationHeight":805392
-            },
-            {
-                "value":"1000000",
-                "ergoTree":"0008cd0362f2d59008815649038ea9f2bc0550150177eb88bcae8be5d95592bec2d8ce99",
-                "assets":[],
-                "additionalRegisters":{},
-                "creationHeight":805392
-            },
-            {
-                "value":"4635994783",
-                "ergoTree":"0008cd029bb1317f5fa5678961b88f7a12c87ffd10b9a132d962c697acd0698d0b0c75fc",
-                "assets":[
-                    {"tokenId":"0f034551879db5880d227c855fc533d6fc8740dcc9670846fa1818bd80c8c727","amount":"208219"},
-                    {"tokenId":"3e6df7dbf3c48748ae74b94cbee4b2e3ec5c4522138e0a1898e8edbe0bfb5ddb","amount":"1"},
-                    {"tokenId":"42ad11164cb217a7ed5327c4c235a49e801655486220c33de5ae7460f49dbfd1","amount":"1"},
-                    {"tokenId":"001475b06ed4d2a2fe1e244c951b4c70d924b933b9ee05227f2f2da7d6f46fd3","amount":"489800000"},
-                    {"tokenId":"8b70d5e59232d6437a74afec8d0eca20c00abaccd2518dbccf0ecde918b8831a","amount":"999000000"},
-                    {"tokenId":"03faf2cb329f2e90d6d23b58d91bbb6c046aa143261cc21f52fbe2824bfcbf04","amount":"2500"}
-                ],
-                "additionalRegisters":{},
-                "creationHeight":805392
-            },
-            {
-                "value":"1100000",
-                "ergoTree":"1005040004000e36100204a00b08cd0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798ea02d192a39a8cc7a701730073011001020402d19683030193a38cc7b2a57300000193c2b2a57301007473027303830108cdeeac93b1a57304",
-                "assets":[],
-                "additionalRegisters":{},
-                "creationHeight":805392
-            }
-        ]
-    }
+        tx = {
+            "inputs": [
+                {
+                    "boxId":"f74ce7a954d63e4ca4089db2b21377f91a5206567fa482acf58c1600550bd7af",
+                    "transactionId":"4af200f4da9eab7b33beca14dd8e4d4f21fd06b57f182ccdc5f7d499271fc327",
+                    "index":2,
+                    "ergoTree":"0008cd029bb1317f5fa5678961b88f7a12c87ffd10b9a132d962c697acd0698d0b0c75fc",
+                    "creationHeight":765238,
+                    "value":"4640094783",
+                    "assets":[
+                        {"tokenId":"8b70d5e59232d6437a74afec8d0eca20c00abaccd2518dbccf0ecde918b8831a","amount":"999000000"},
+                        {"tokenId":"42ad11164cb217a7ed5327c4c235a49e801655486220c33de5ae7460f49dbfd1","amount":"1"},
+                        {"tokenId":"3e6df7dbf3c48748ae74b94cbee4b2e3ec5c4522138e0a1898e8edbe0bfb5ddb","amount":"1"},
+                        {"tokenId":"03faf2cb329f2e90d6d23b58d91bbb6c046aa143261cc21f52fbe2824bfcbf04","amount":"2500"},
+                        {"tokenId":"001475b06ed4d2a2fe1e244c951b4c70d924b933b9ee05227f2f2da7d6f46fd3","amount":"489900000"},
+                        {"tokenId":"0f034551879db5880d227c855fc533d6fc8740dcc9670846fa1818bd80c8c727","amount":"208219"}
+                    ],
+                    "additionalRegisters":{},
+                    "confirmed":True,
+                    "extension":{}
+                }
+            ],
+            "dataInputs":[],
+            "outputs": [
+                {
+                    "value":"2000000",
+                    "ergoTree":"0008cd029bb1317f5fa5678961b88f7a12c87ffd10b9a132d962c697acd0698d0b0c75fc",
+                    "assets":[],
+                    "additionalRegisters":{},
+                    "creationHeight":805392
+                },
+                {
+                    "value":"1000000",
+                    "ergoTree":"0008cd0362f2d59008815649038ea9f2bc0550150177eb88bcae8be5d95592bec2d8ce99",
+                    "assets":[],
+                    "additionalRegisters":{},
+                    "creationHeight":805392
+                },
+                {
+                    "value":"4635994783",
+                    "ergoTree":"0008cd029bb1317f5fa5678961b88f7a12c87ffd10b9a132d962c697acd0698d0b0c75fc",
+                    "assets":[
+                        {"tokenId":"0f034551879db5880d227c855fc533d6fc8740dcc9670846fa1818bd80c8c727","amount":"208219"},
+                        {"tokenId":"3e6df7dbf3c48748ae74b94cbee4b2e3ec5c4522138e0a1898e8edbe0bfb5ddb","amount":"1"},
+                        {"tokenId":"42ad11164cb217a7ed5327c4c235a49e801655486220c33de5ae7460f49dbfd1","amount":"1"},
+                        {"tokenId":"001475b06ed4d2a2fe1e244c951b4c70d924b933b9ee05227f2f2da7d6f46fd3","amount":"489800000"},
+                        {"tokenId":"8b70d5e59232d6437a74afec8d0eca20c00abaccd2518dbccf0ecde918b8831a","amount":"999000000"},
+                        {"tokenId":"03faf2cb329f2e90d6d23b58d91bbb6c046aa143261cc21f52fbe2824bfcbf04","amount":"2500"}
+                    ],
+                    "additionalRegisters":{},
+                    "creationHeight":805392
+                },
+                {
+                    "value":"1100000",
+                    "ergoTree":"1005040004000e36100204a00b08cd0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798ea02d192a39a8cc7a701730073011001020402d19683030193a38cc7b2a57300000193c2b2a57301007473027303830108cdeeac93b1a57304",
+                    "assets":[],
+                    "additionalRegisters":{},
+                    "creationHeight":805392
+                }
+            ]
+        }
 
-    # build tx
-    tx = {
-        'hello': 'world'
-    }
-    logger.debug(f'transaction: {tx}')
+        # build tx
+        tx = {
+            'hello': 'world'
+        }
+        logger.debug(f'transaction: {tx}')
 
-    # try to sign/submit
-    return {"tx": tx}
+        # try to sign/submit
+        return {"tx": tx}
+
+    except Exception as e:
+        logger.error(f'ERR: {myself()}; {e}')
 
 @r.post("/mint/")
 async def mint(token: Token):

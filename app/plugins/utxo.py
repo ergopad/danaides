@@ -47,7 +47,7 @@ async def checkpoint(utxos):
             contents['creation_height'].append(json.dumps(content['creation_height']))
             contents['height'].append(content['height'])
         df_box_contents = pd.DataFrame().from_dict(contents)
-        df_box_contents.to_sql(f'checkpoint_utxos', eng, if_exists='replace') # , dtype={"new_json_col": sqlalchemy.types.JSON},
+        df_box_contents.to_sql(f'utxos', eng, schema='checkpoint', if_exists='replace') # , dtype={"new_json_col": sqlalchemy.types.JSON},
 
         # utxos
         with eng.begin() as con:
@@ -63,7 +63,7 @@ async def checkpoint(utxos):
                         , trim(both '"' from transaction_id::text)::varchar(64) as transaction_id
                         , creation_height::int
                         , height::int
-                    from checkpoint_utxos
+                    from checkpoint.utxos
             '''
             con.execute(sql)
 

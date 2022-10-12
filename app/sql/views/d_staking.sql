@@ -1,4 +1,4 @@
-create or replace view v_staking as
+create materialized view staking as
 	with 
 	ergopad as (
 		select 'ergopad' as project_name
@@ -148,4 +148,7 @@ create or replace view v_staking as
 	from neta u
 		join a on a.token_id = u.stakekey_token_id
 	where proxy = 1
-;
+
+    with no data;
+
+create unique index uq_staking on staking (box_id, token_id);

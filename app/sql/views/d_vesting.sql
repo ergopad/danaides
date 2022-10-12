@@ -1,4 +1,4 @@
-create or replace view v_vesting as
+create materialized view vesting as
 	with v as (
 		select id 
 			, ergo_tree
@@ -39,4 +39,7 @@ create or replace view v_vesting as
 	from v
 		-- filter to only vesting keys
 		join a on a.token_id = v.vesting_key_id
-;
+    
+    with no data;
+
+create unique index uq_vesting on vesting (box_id, token_id);

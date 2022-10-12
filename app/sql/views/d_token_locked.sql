@@ -1,5 +1,4 @@
--- drop view v_token_locked cascade
-create or replace view v_token_locked as
+create materialized view token_locked as
 	with 
 	adr as (
 		select 
@@ -18,8 +17,10 @@ create or replace view v_token_locked as
 		, u.stakekey_token_id
 		, u.amount/power(10, u.decimals) as amount
 		, u.penalty
-	from v_token_staked u
+	from token_staked u
 		join adr on adr.token_id = u.stakekey_token_id
 	where proxy = 1
-;
--- drop table token_locked; select * into token_locked from v_token_locked
+
+    with no data;
+
+create unique index uq_token_locked on token_locked (box_id, token_id);

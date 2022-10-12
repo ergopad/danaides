@@ -1,4 +1,4 @@
-create or replace view v_tokenomics_neta as
+create materialized view tokenomics_egio as
 	with 
     assets as (
         select (each(assets)).key as token_id
@@ -69,4 +69,7 @@ create or replace view v_tokenomics_neta as
 		, ((supply - vested - emitted - stake_pool)/decimals)::decimal(32, 2) as in_circulation_actual
     from vals v
 		join tokens t on t.token_id = '00b1e236b60b95c2c6f8007a9d89bc460fc9e78f98b09faec9449007b40bccf3'
-;
+
+    with no data;
+
+create unique index uq_tokenomics_egio on tokenomics_egio (token_id);

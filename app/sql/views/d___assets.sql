@@ -1,4 +1,4 @@
-create or replace view v_assets as 
+create materialized view assets as 
 	with a as (
 		select 
 			address
@@ -14,4 +14,8 @@ create or replace view v_assets as
 		, sum(amount) as amount
 	from a 
 	group by address, token_id
-;
+    
+    -- with no data;
+    with data;
+
+create unique index uq_assets on assets (address, token_id);

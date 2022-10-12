@@ -1,4 +1,4 @@
-create or replace view v_tokenomics_ergopad as
+create materialized view tokenomics_ergopad as
 	with 
     assets as (
         select (each(assets)).key as token_id
@@ -68,4 +68,7 @@ create or replace view v_tokenomics_ergopad as
 		, ((supply - coalesce(vested, 0.0) - emitted - stake_pool)/decimals)::decimal(32, 2) as in_circulation_actual
     from vals v
 		join tokens t on t.token_id = 'd71693c49a84fbbecd4908c94813b46514b18b67a99952dc1e6e4791556de413'
-;
+
+    with no data;
+
+create unique index uq_tokenomics_ergopad on tokenomics_ergopad (token_id);

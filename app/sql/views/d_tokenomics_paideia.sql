@@ -1,4 +1,4 @@
-create or replace view v_tokenomics_paideia as
+create materialized view tokenomics_paideia as
 	with 
     assets as (
         select (each(assets)).key as token_id
@@ -69,4 +69,7 @@ create or replace view v_tokenomics_paideia as
 		, ((supply - vested - emitted - stake_pool)/decimals)::decimal(32, 2) as in_circulation_actual
     from vals v
 		join tokens t on t.token_id = '1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489'
-;
+
+    with no data;
+
+create unique index uq_tokenomics_paideia on tokenomics_paideia (token_id);
