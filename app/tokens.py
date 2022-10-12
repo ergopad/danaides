@@ -7,66 +7,26 @@ from requests import get
 from time import sleep
 from utils.db import eng
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
-from utils.ergo import get_node_info, get_genesis_block, NODE_API
+from utils.ergo import get_node_info, NODE_API
 from utils.aioreq import get_json_ordered
 from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
+
+"""
+tokens.py
+---------
+
+- current ability to refresh token table to validate that all tokens have been caught in current process
+- working towards replacing current token.py plugin with this
+
+"""
 
 #region INIT
 FETCH_INTERVAL = 500
 LINELEN = 100
 PRETTYPRINT = False
-VERBOSE = False # args.verbose
+VERBOSE = False
 NERGS2ERGS = 10**9
-BOXES = 'boxes'
 TOKENS = 'tokens'
-
-# upsert current chunk
-async def checkpoint(height, tokens, is_plugin: bool=False, args=None):
-    try:
-        # handle globals when process called from as plugin
-        if is_plugin and (args != None):
-            if args.prettyprint: PRETTYPRINT = True
-
-        # suffix = f'''TOKENS: Found {len(tokens)} tokens in current block range (starting at {height})...                      '''
-        # if PRETTYPRINT: printProgressBar(height, height, prefix='[TOKENS]', suffix=suffix, length=50)
-        # else: logger.info(suffix)
-        # if VERBOSE: logger.debug(tokens)
-        df = pd.DataFrame.from_dict({
-            'token_id': list(tokens.keys()), 
-            'height': [n['height'] for n in tokens.values()], 
-            'amount': [n['amount'] for n in tokens.values()],
-            'token_name': [n['token_name'] for n in tokens.values()],
-            'decimals': [n['decimals'] for n in tokens.values()], 
-        })
-        if VERBOSE: logger.warning(df)
-        df.to_sql(f'{TOKENS}', eng, schema='checkpoint', if_exists='replace')
-        if VERBOSE: logger.debug('saved to checkpoint.tokens')
-
-        # execute as transaction
-        with eng.begin() as con:
-            # add unspent
-            sql = f'''
-                insert into {TOKENS} (token_id, height, amount, token_name, decimals)
-                    select c.token_id, c.height, c.amount, c.token_name, c.decimals
-                    from checkpoint.{TOKENS} c
-                        left join {TOKENS} t on t.token_id = c.token_id
-                    -- unique constraint; but want all others
-                    where t.token_id is null
-                    ;
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)
-
-            sql = f'''
-                insert into audit_log (height, service, notes)
-                values ({int(height)-1}, '{TOKENS}', '{len(tokens)} found')
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)
-
-    except Exception as e:
-        logger.error(f'ERR: checkpointing {e}')
-        pass  
 
 async def refresh(height, tokens):
     try:
@@ -204,11 +164,9 @@ def cli():
     global PRETTYPRINT
     global VERBOSE
     global FETCH_INTERVAL
-    global BOXES
 
     parser = argparse.ArgumentParser()
     
-    parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
     parser.add_argument("-B", "--override", help="Process this box", default='')
     parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
     parser.add_argument("-Z", "--sleep", help="Begin at this height", type=int, default=0)
@@ -229,7 +187,6 @@ def cli():
     PRETTYPRINT = args.prettyprint
     VERBOSE = args.verbose
     FETCH_INTERVAL = args.fetchinterval    
-    BOXES = ''.join([i for i in args.juxtapose if i.isalpha()]) # only-alpha tablename
 
     return args
 
@@ -335,6 +292,9 @@ async def main(args):
                 stats = await refresh(next_height, tokens)
                 new_tokens += stats['new']
                 old_tokens += stats['existing']
+
+            if ((next_height-1) % 100000) == 0:
+                logger.info(f'[[ height: {next_height-1} | new: {new_tokens} | old: {old_tokens} ]]')
 
             tokens = {}
 

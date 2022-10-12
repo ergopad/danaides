@@ -1,5 +1,5 @@
 from os import path, listdir, getenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.schema import DropTable
 from sqlalchemy.ext.compiler import compiles
 from utils.logger import logger, myself
