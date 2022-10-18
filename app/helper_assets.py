@@ -7,148 +7,26 @@ from requests import get
 from time import sleep
 from utils.db import eng
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
-from utils.ergo import get_node_info, get_genesis_block, NODE_API
+from utils.ergo import get_node_info, NODE_API
 from utils.aioreq import get_json_ordered
 from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
+"""
+tokens.py
+---------
+
+- current ability to refresh token table to validate that all tokens have been caught in current process
+- working towards replacing current token.py plugin with this
+
+"""
+
 #region INIT
-FETCH_INTERVAL = 500
+FETCH_INTERVAL = 5
 LINELEN = 100
 PRETTYPRINT = False
-VERBOSE = False # args.verbose
+VERBOSE = False
 NERGS2ERGS = 10**9
-BOXES = 'boxes'
 TOKENS = 'tokens'
-
-# upsert current chunk
-async def checkpoint(height, tokens, is_plugin: bool=False, args=None):
-    try:
-        # handle globals when process called from as plugin
-        if is_plugin and (args != None):
-            if args.prettyprint: PRETTYPRINT = True
-
-        # suffix = f'''TOKENS: Found {len(tokens)} tokens in current block range (starting at {height})...                      '''
-        # if PRETTYPRINT: printProgressBar(height, height, prefix='[TOKENS]', suffix=suffix, length=50)
-        # else: logger.info(suffix)
-        # if VERBOSE: logger.debug(tokens)
-        df = pd.DataFrame.from_dict({
-            'token_id': list(tokens.keys()), 
-            'height': [n['height'] for n in tokens.values()], 
-            'amount': [n['amount'] for n in tokens.values()],
-            'token_name': [n['token_name'] for n in tokens.values()],
-            'decimals': [n['decimals'] for n in tokens.values()], 
-        })
-        if VERBOSE: logger.warning(df)
-        df.to_sql(f'{TOKENS}', eng, schema='checkpoint', if_exists='replace')
-        if VERBOSE: logger.debug('saved to checkpoint.tokens')
-
-        # execute as transaction
-        with eng.begin() as con:
-            # add unspent
-            sql = f'''
-                insert into {TOKENS} (token_id, height, amount, token_name, decimals)
-                    select c.token_id, c.height, c.amount, c.token_name, c.decimals
-                    from checkpoint.{TOKENS} c
-                        left join {TOKENS} t on t.token_id = c.token_id
-                    -- unique constraint; but want all others
-                    where t.token_id is null
-                    ;
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)
-
-            sql = f'''
-                insert into audit_log (height, service, notes)
-                values ({int(height)-1}, '{TOKENS}', '{len(tokens)} found')
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)
-
-    except Exception as e:
-        logger.error(f'ERR: checkpointing {e}')
-        pass  
-
-async def refresh(height, tokens):
-    try:
-        # init
-        stats = {}
-
-        # dataframe - create dataset to push to sql table
-        if VERBOSE: logger.debug(tokens)
-        df = pd.DataFrame.from_dict({
-            'token_id': list(tokens.keys()), 
-            'height': [n['height'] for n in tokens.values()], 
-            'amount': [n['amount'] for n in tokens.values()],
-            'token_name': [n['token_name'] for n in tokens.values()],
-            'decimals': [n['decimals'] for n in tokens.values()], 
-        })
-        if VERBOSE: logger.warning(df)
-        df.to_sql(f'{TOKENS}_refresh', eng, schema='checkpoint', if_exists='replace')
-        if VERBOSE: logger.debug(f'saved to checkpoint.{TOKENS}_refresh')
-
-        # stats - find new/existing tokens
-        sql = f'''
-            with 
-            new as (
-                select count(*) as i
-                from checkpoint.{TOKENS}_refresh c
-                    left join {TOKENS} t on t.token_id = c.token_id
-                where t.token_id is null
-            )
-            , xst as (
-                select count(*) as i
-                from checkpoint.{TOKENS}_refresh c
-                    join {TOKENS} t on t.token_id = c.token_id
-            )
-            select new.i as new
-                , xst.i as xst
-            from new
-            cross join xst
-        '''
-        with eng.begin() as con:
-            if VERBOSE: logger.debug(sql)
-            i = con.execute(sql).fetchone()
-
-        stats['new'] = i['new']
-        stats['existing'] = i['xst']
-
-        # execute as transaction
-        if i['new'] > 0:
-            with eng.begin() as con:
-                sql = f'''
-                    select c.token_id
-                    from checkpoint.{TOKENS}_refresh c
-                        left join {TOKENS} t on t.token_id = c.token_id
-                    where t.token_id is null
-                '''
-                tok = con.execute(sql).fetchall()
-                for t in tok:
-                    logger.warning(t['token_id'])
-
-                # add new tokens
-                sql = f'''
-                    insert into {TOKENS} (token_id, height, amount, token_name, decimals)
-                        select c.token_id, c.height, c.amount, c.token_name, c.decimals
-                        from checkpoint.{TOKENS}_refresh c
-                            left join {TOKENS} t on t.token_id = c.token_id
-                        where t.token_id is null
-                        ;
-                '''
-                if VERBOSE: logger.debug(sql)
-                con.execute(sql)
-
-                sql = f'''
-                    insert into audit_log (height, service, notes)
-                    values ({int(height)-1}, '{TOKENS}', 'refresh: {i['new']} found, {i['xst']} existing')
-                '''
-                if VERBOSE: logger.debug(sql)
-                con.execute(sql)
-
-    except Exception as e:
-        logger.error(f'ERR: checkpointing {e}')
-        pass  
-
-    return stats
 
 # extract tokens from the bolckchain
 async def process(transactions: dict, tokens: dict, height: int, is_plugin: bool=False, args=None) -> dict:
@@ -200,15 +78,57 @@ async def process(transactions: dict, tokens: dict, height: int, is_plugin: bool
         logger.error(f'ERR: find tokens {e}')
         return {}
 
+# remove all inputs from current block
+async def del_inputs(inputs: dict, unspent: dict, height: int=-1) -> dict:
+    try:
+        new = unspent
+        for i in inputs:
+            box_id = i['boxId']
+            try:
+                # new[box_id] = height
+                new[box_id] = {
+                    'height': height, # -1 indicates spent; see checkpoint (is_unspent in checkpoint.boxes table)
+                    'nergs': 0
+                }
+            except Exception as e:
+                BLIPS.append({'box_id': box_id, 'height': height, 'msg': f'cant remove'})
+                if VERBOSE: logger.warning(f'cant find {box_id} at height {height} while removing from unspent {e}')
+        return new
+
+    except Exception as e:
+        logger.error(f'ERR: find tokens {e}')
+        return {}
+
+# add all outputs from current block
+async def add_outputs(outputs: dict, unspent: dict, height: int) -> dict:
+    try:
+        new = unspent
+        for o in outputs:
+            box_id = o['boxId']
+            nergs = o['value']
+            # amount = o['value']
+            try:
+                # new[box_id] = height
+                new[box_id] = {
+                    'height': height,
+                    'nergs': nergs
+                }
+            except Exception as e:
+                BLIPS.append({'box_id': box_id, 'height': height, 'msg': f'cant add'})
+                if VERBOSE: logger.warning(f'{box_id} exists at height {height} while adding to unspent {e}')
+        return new
+
+    except Exception as e:
+        logger.error(f'ERR: add outputs {e}')
+        return {}
+
 def cli():
     global PRETTYPRINT
     global VERBOSE
     global FETCH_INTERVAL
-    global BOXES
 
     parser = argparse.ArgumentParser()
     
-    parser.add_argument("-J", "--juxtapose", help="Alternative table name", default='boxes')
     parser.add_argument("-B", "--override", help="Process this box", default='')
     parser.add_argument("-H", "--height", help="Begin at this height", type=int, default=-1)
     parser.add_argument("-Z", "--sleep", help="Begin at this height", type=int, default=0)
@@ -219,7 +139,6 @@ def cli():
     
     args = parser.parse_args()
 
-    if args.juxtapose != 'boxes': logger.warning(f'Using alt boxes table: {args.juxtapose}...')        
     if args.height != -1: logger.warning(f'Starting at height: {args.height}...')
     if args.prettyprint: logger.warning(f'Pretty print...')
     if args.once: logger.warning(f'Processing once, then exit...')
@@ -229,7 +148,6 @@ def cli():
     PRETTYPRINT = args.prettyprint
     VERBOSE = args.verbose
     FETCH_INTERVAL = args.fetchinterval    
-    BOXES = ''.join([i for i in args.juxtapose if i.isalpha()]) # only-alpha tablename
 
     return args
 
@@ -266,11 +184,12 @@ async def get_all(urls) -> dict:
 # this is useful outside of being called as a plugin to re-scan the entier blockchain and not just the current blocks
 async def main(args):
     # init
-    tokens = {}
+    unspent = {}
+    utxos = {}
     new_tokens = 0
     old_tokens = 0
-    last_height = 1
-    current_height = 1
+    last_height = 776135
+    current_height = 776135
     t = Timer()
     t.start()
 
@@ -309,48 +228,28 @@ async def main(args):
             urls = [[hdr[1], f'''{NODE_API}/blocks/{hdr[2][0]}/transactions'''] for hdr in block_headers if hdr[1] != 0]
             blocks = await get_all(urls)
 
-            # recreate blockchain (must put together in order)
-            suffix = f'''{last_height}-{next_height} / {current_height} UNSPENT'''
-            # prefix=f'''({new_tokens}/{old_tokens}) {t.split()}'''
-            if PRETTYPRINT: printProgressBar(int(last_height+(2*FETCH_INTERVAL/3)), current_height, prefix=prefix, suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
-            else: 
-                try: percent_complete = f'{100*int(last_height+(2*FETCH_INTERVAL/3))/current_height:0.2f}%'
-                except: percent_complete= 0
-                logger.info(f'{percent_complete}/{t.split()} {suffix}')
-            for blk, transactions in sorted([[b[1], b[2]] for b in blocks]):
-                tokens = await process(transactions['transactions'], tokens, blk, is_plugin=True, args=args)
+            # find register value
+            for b in blocks:
+                if b[0] == 200:
+                    for tx in b[2]['transactions']:
+                        for o in tx['outputs']:
+                            if 'R5' in o['additionalRegisters']:
+                                if '0e2030360b441b33136330f7bec2b06126c5a8fdc5f389e8ed53345f9ecd5ae10cdf' in o['additionalRegisters']['R5']:
+                                    logger.error(f'=========================================\n{o}=========================================\n{b}=========================================\n')
+                                # if o['additionalRegisters']['R5'][:4] == '0e20': logger.warning(o)
 
             # checkpoint
             if VERBOSE: logger.debug('Checkpointing...')
             last_height += FETCH_INTERVAL
             suffix = f'''{last_height}-{next_height} / {current_height} CHECKPOINT'''            
-            # prefix=f'''({new_tokens}/{old_tokens}) {t.split()}'''
             if PRETTYPRINT: printProgressBar(next_height, current_height, prefix=prefix, suffix=f'{suffix}{" "*(LINELEN-len(suffix))}', length=50)
             else: 
                 try: percent_complete = f'{100*next_height/current_height:0.2f}%'
                 except: percent_complete= 0
                 logger.warning(f'{percent_complete}/{t.split()} {suffix}')
-            
-            if len(tokens) > 0: 
-                stats = await refresh(next_height, tokens)
-                new_tokens += stats['new']
-                old_tokens += stats['existing']
-
-            tokens = {}
 
         sec = t.stop()
         logger.debug(f'main.app:: Token refresh took {sec:0.4f}s...')
-
-        fin = {
-            'current_height' : current_height,
-            'new_tokens' : new_tokens,
-            'old_tokens' : old_tokens,
-            'total_tokens' : new_tokens+old_tokens,
-            'status': 'success',
-            'message': f'update took {sec:0.4f}s...',
-        }
-
-        logger.info(fin)
 
     except KeyboardInterrupt:
         logger.error('Interrupted.')
@@ -359,16 +258,8 @@ async def main(args):
 
     except Exception as e:
         logger.error(f'ERR: {myself()}; {e}')
-        fin = {
-            'current_height' : current_height,
-            'new_tokens' : new_tokens,
-            'old_tokens' : old_tokens,
-            'total_tokens' : new_tokens+old_tokens,
-            'status': 'error',
-            'message': e
-        }
 
-    return fin
+    return None
 
 if __name__ == '__main__':    
     args = cli()
