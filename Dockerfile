@@ -1,8 +1,8 @@
-# FROM tiangolo/uvicorn-gunicorn-fastapi:python3.8
 FROM python:3
 
 COPY ./app /app
 WORKDIR /app
+ENV PYTHONPATH "${PYTHONPATH}:/app"
 
 # install system dependencies
 RUN apt-get update \

@@ -168,6 +168,8 @@ async def get_all(urls) -> dict:
         if retries > 0:
             logger.warning(f'WARN: {retries} retries; sleeping for 20s.')
             sleep(20)
+            retries = 1
+            res = {}
     
     return res
 
@@ -271,8 +273,9 @@ async def process(args, t, height: int=-1) -> dict:
                 for tx in transactions['transactions']:
                     unspent = await del_inputs(tx['inputs'], unspent)
                     unspent = await add_outputs(tx['outputs'], unspent, blk)
-                    if PLUGINS.token:
-                        tokens = await token.process(transactions['transactions'], tokens, blk, is_plugin=True, args=args)
+                # TODO: move this to separate process
+                if PLUGINS.token:
+                    tokens = await token.process(transactions['transactions'], tokens, blk, is_plugin=True, args=args)
 
             # checkpoint
             if VERBOSE: logger.debug('Checkpointing...')
@@ -323,6 +326,21 @@ class App:
     def stop(self):
         logger.info("main.app:: Fin.")
 
+    def get_mempool():
+        res = requests.get(f'{NODE_API}/transactions/unconfirmed')
+        if res.ok:
+            mempool = res.json()
+            # TODO: what is needed from the mempool? output boxes? registers? assets?
+            return {
+                'status': 'success',
+                'transaction_count': len(mempool),
+            }
+        else:
+            return {
+                'status': 'error',
+                'transaction_count': None,
+            }
+
     # find all new currnet blocks
     async def process(self, args, height):
         # init timer
@@ -356,20 +374,7 @@ class App:
             '''
             with eng.begin() as con:
                 res = con.execute(sql) 
-            
-            # if len(RECENT_BLOCKS) >= 10:
-            #     blkavg = 0
-            #     block_times = sorted(RECENT_BLOCKS.keys())
-            #     last_time = RECENT_BLOCKS[block_times[-10:-9]]
-            #     for blk in block_times[-9:]:
-            #         blkavg += RECENT_BLOCKS[blk] - last_time
-            #         last_time = RECENT_BLOCKS[blk]
-            #     logger.warning(f'last 10 blocks avg time: {blkavg/10:0.4f}')
-            # else:
-            #     logger.warning(f'not enough blocks to compute average yet ({len(RECENT_BLOCKS)})')
-
             logger.warning('\n\t'+'\n\t'.join([f'''main.hibernate:: {r['tbl']}: {r['i']} rows, {r['j']} height''' for r in res]))
-
 
             # chill for next block
             logger.debug('Hibernating...')
@@ -383,6 +388,8 @@ class App:
                     else:
                         if infinity_counter%15 == 0:
                             logger.warning(f'''({current_height}) {t.split()} Waiting for next block...''')
+
+                    # TODO: update mempool
 
                     infinity_counter += 1
                     sleep(1)
