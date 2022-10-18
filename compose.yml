@@ -7,6 +7,7 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file: ${ENV_FILE}
+    restart: unless-stopped
     working_dir: /app
     security_opt:
       - seccomp:unconfined
@@ -29,12 +30,13 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file: ${ENV_FILE}
+    restart: unless-stopped
     working_dir: /app
     security_opt:
       - seccomp:unconfined
     ports:
-      - 7000:7000
-      - 7001:8000 # default port for python -m http.server
+      - 7010:7000
+      - 8010:8000 # default port for python -m http.server
     volumes:
       - ./app:/app
     networks:

@@ -1,12 +1,13 @@
 from os import path, listdir, getenv
-from sqlalchemy import create_engine, inspect, text, MetaData, Table
+from sqlalchemy import create_engine, text
 from sqlalchemy.schema import DropTable
 from sqlalchemy.ext.compiler import compiles
-from utils.logger import logger, Timer, printProgressBar
+from utils.logger import logger, myself
 from config import get_tables
-from string import ascii_uppercase, digits
-from random import choices
 from time import sleep
+# from sqlalchemy import create_engine, inspect, text, MetaData, Table
+# from string import ascii_uppercase, digits
+# from random import choices
 
 DB_DANAIDES = f"postgresql://{getenv('DANAIDES_USER')}:{getenv('DANAIDES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DB')}"
 eng = create_engine(DB_DANAIDES)
@@ -15,111 +16,8 @@ eng = create_engine(DB_DANAIDES)
 def _compile_drop_table(element, compiler, **kwargs):
     return compiler.visit_drop_table(element) + " CASCADE"
 
-async def dnp(tbl: str):
-    try:
-        if tbl not in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token']:
-            return {
-                'status': 'error', 
-                'message': f'invalid request for table: "{tbl}"', 
-                'row_count_before': -1, 
-                'row_count_after': -1,
-            }
-
-        metadata_obj, TABLES = get_tables(eng)
-        src = TABLES[tbl]
-        tmp_table = f'tmp_{tbl}'
-        eng._metadata = MetaData(bind=eng)
-        eng._metadata.reflect(eng)
-        tmp = Table(tbl, eng._metadata)
-
-        rndstr = '__'+(''.join(choices(ascii_uppercase+digits, k=10)))
-        tmp.name = tmp_table
-        cols = ','.join([n.name for n in tmp.columns if n.name != 'id'])
-        if tmp.primary_key.name is not None:
-            tmp.primary_key.name = (tmp.primary_key.name.split('__'))[0] + rndstr
-
-        sqlInsertTmp = f'''
-            insert into {tmp_table} ({cols})
-                select {cols}
-                from v_{tbl};
-        '''
-        sqlRowCount = f'''
-            select count(*) as rc
-            from {tbl}
-        '''
-
-        rc = {
-            'before': 0,
-            'after': 0,
-        }
-        # starting row count
-        logger.debug(f'before rc')
-        with eng.begin() as con:
-            try:
-                res = con.execute(sqlRowCount).fetchone()
-                rc['before'] = res['rc']
-            except:
-                pass
-            logger.warning(f'''row count before: {rc['before']}''')
-        
-        # avoid dups with index names
-        for i in tmp.indexes:
-            i.name = (i.name.split('__'))[0] + rndstr
-
-        # avoid dups with constraint names
-        for c in tmp.constraints:
-            c.name = (c.name.split('__'))[0] + rndstr
-
-        # check if tmp exists
-        logger.debug(f'check tmp')
-        if inspect(eng).has_table(tmp_table):
-            logger.warning(f'drop {tmp_table}')
-            tmp.drop()
-
-        # create tmp
-        logger.warning(f'create {tmp_table}')
-        tmp.create()
-
-        # populate tmp
-        with eng.begin() as con:
-            logger.warning(f'insert into {tmp_table} from v_{tbl}')
-            con.execute(sqlInsertTmp)
-        
-        # drop src
-        if inspect(eng).has_table(tbl):
-            logger.warning(f'drop {tbl}')
-            src.drop()
-        
-        # rename tmp to src
-        with eng.begin() as con:
-            logger.warning(f'rename {tmp_table} to {tbl}')
-            con.execute(f'alter table {tmp_table} rename to {tbl};')
-
-        # final row count
-        with eng.begin() as con:
-            res = con.execute(sqlRowCount).fetchone()
-            rc['after'] = res['rc']
-            logger.warning(f'''row count after: {rc['after']}''')
-
-        # fin
-        return {
-            'status': 'success', 
-            'message': tbl, 
-            'row_count_before': rc['before'], 
-            'row_count_after': rc['after'],
-        }
-
-    except Exception as e:
-        logger.error(f'ERR: {e}')
-        return {
-            'status': 'error', 
-            'message': f'ERR: dnp, {e}', 
-            'row_count_before': -1, 
-            'row_count_after': -1,
-        }
-
 # create db objects if they don't exists
-async def init_db():
+def init_db():
     # if new db, make sure hstore extension exists
     attempt = 5
     while attempt > 0:
@@ -137,8 +35,10 @@ async def init_db():
                 logger.warning(f'Failed to access database (attempt {5-attempt})')
             sleep(1)
 
+    # add extensions
     try:
-        sql = 'create extension if not exists hstore;'
+        logger.debug(f'creating hstore extension')
+        sql = 'create extension if not exists hstore'
         with eng.begin() as con:
             con.execute(sql)
 
@@ -146,8 +46,21 @@ async def init_db():
         logger.error(f'ERR: {e}')
         pass
 
+    # create alt schemas
+    try:
+        logger.debug(f'creating schema checkpoint')
+        sql = 'create schema if not exists checkpoint'
+        with eng.begin() as con:
+            con.execute(sql)
+
+    except Exception as e:
+        logger.error(f'ERR: {e}')
+        pass
+
+
     # build tables, if needed
     try:
+        logger.debug(f'getting metadata')
         # metadata_obj = MetaData(eng)
         metadata_obj, TABLES = get_tables(eng)
         metadata_obj.create_all(eng)
@@ -157,17 +70,58 @@ async def init_db():
 
     # build views
     try:
+        logger.debug(f'building views')
+        # remove all materialized views (start with d_)
+        sql = f'''
+            select matviewname
+            from pg_matviews 
+            where schemaname = 'public'
+                -- remove all? or, identify through naming convention?
+                -- and left(matviewname, 2) = 'd_'
+        '''
+        with eng.begin() as con:
+            res = con.execute(sql).fetchall()
+            for r in res:
+                mv = r['matviewname']
+                logger.debug(f'drop matview {mv}')
+                sql = f'''drop materialized view if exists {mv} cascade'''
+                con.execute(sql)
+        
+        # create mat views
         view_dir = '/app/sql/views'
         with eng.begin() as con:
             views = listdir(view_dir)
-            for v in views:
-                if v.startswith('v_') and v.endswith('.sql'):
+            for v in sorted(views):
+                if v.startswith('d_') and v.endswith('.sql'):
+                    logger.debug(f'creating matview {v}')
                     with open(path.join(view_dir, v), 'r') as f:
                         sql = f.read()
                     con.execute(sql)
 
     except Exception as e:
         logger.error(f'ERR: {e}')
+
+def refresh_views(concurrently=True):
+    try:
+        # refresh all the views in background thread? (will take some time)
+        # after first refresh, concurrently can be used
+        # remove all materialized views (start with d_)
+        sql = f'''
+            select matviewname
+            from pg_matviews 
+            where schemaname = 'public' 
+                -- and left(matviewname, 2) = 'd_'
+        '''
+        with eng.begin() as con:
+            res = con.execute(sql).fetchall()
+            for mv in res:
+                sql = f'''refresh materialized view {('', 'concurrently')[concurrently]} {mv['matviewname']}'''
+                con.execute(sql)
+
+        logger.debug('refresh materialized views complete.')
+
+    except Exception as e:
+        logger.error(f'ERR: {myself()}; {e}')
 
 # build all indexes
 async def build_indexes():
@@ -176,7 +130,7 @@ async def build_indexes():
         with eng.begin() as con:
             indexes = listdir(index_dir)
             for i in indexes:
-                # if v.startswith('i_') and  and i.endswith('.sql'):
+                # if v.startswith('d_') and  and i.endswith('.sql'):
                 if i.endswith('.sql'):
                     with open(path.join(index_dir, i), 'r') as f:
                         sql = f.read()
@@ -194,4 +148,4 @@ async def build_tmp(tbl:str):
         tmp.create() 
         
     except Exception as e:
-        logger.error(f'ERR: {e}')
+        logger.error(f'ERR: {myself()}; {e}')

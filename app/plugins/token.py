@@ -32,8 +32,8 @@ async def checkpoint(height, tokens, is_plugin: bool=False, args=None):
             'decimals': [n['decimals'] for n in tokens.values()], 
         })
         if VERBOSE: logger.warning(df)
-        df.to_sql(f'checkpoint_{TOKENS}', eng, if_exists='replace')
-        if VERBOSE: logger.debug('saved to checkpoint_tokens')
+        df.to_sql(f'{TOKENS}', eng, schema='checkpoint', if_exists='replace')
+        if VERBOSE: logger.debug('saved to checkpoint.tokens')
 
         # execute as transaction
         with eng.begin() as con:
@@ -41,7 +41,7 @@ async def checkpoint(height, tokens, is_plugin: bool=False, args=None):
             sql = f'''
                 insert into {TOKENS} (token_id, height, amount, token_name, decimals)
                     select c.token_id, c.height, c.amount, c.token_name, c.decimals
-                    from checkpoint_{TOKENS} c
+                    from checkpoint.{TOKENS} c
                         left join {TOKENS} t on t.token_id = c.token_id
                     -- unique constraint; but want all others
                     where t.token_id is null

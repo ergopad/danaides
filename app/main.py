@@ -2,19 +2,21 @@ import asyncio
 import os, sys, signal
 import pandas as pd
 import argparse
+import requests
 
-from time import sleep
+from time import sleep, time
 from config import dotdict
-from utils.db import eng, text, dnp, build_indexes
+from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, NODE_API
 from utils.aioreq import get_json_ordered
 from sqlalchemy.exc import OperationalError
 from plugins import prices, utxo, token
-from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
+# from ergo_python_appkit.appkit import ErgoAppKit, ErgoValue
 
 #region INIT
 # GLOBALs
+RECENT_BLOCKS = {}
 PRETTYPRINT = False
 VERBOSE = False
 FETCH_INTERVAL = 500
@@ -41,7 +43,7 @@ async def del_inputs(inputs: dict, unspent: dict, height: int=-1) -> dict:
             try:
                 # new[box_id] = height
                 new[box_id] = {
-                    'height': height, # -1 indicates spent; see checkpoint (is_unspent in checkpoint_boxes table)
+                    'height': height, # -1 indicates spent; see checkpoint (is_unspent in checkpoint.boxes table)
                     'nergs': 0
                 }
             except Exception as e:
@@ -87,8 +89,8 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
             'nerg': [n['nergs'] for n in unspent.values()],
             'is_unspent': [n['height']!=-1 for n in unspent.values()], # [b!=-1 for b in list(unspent.values())]
         })
-        df.to_sql(f'checkpoint_{BOXES}', eng, if_exists='replace')
-        if VERBOSE: logger.debug(f'checkpoint_boxes: {height}')
+        df.to_sql(f'{BOXES}', eng, schema='checkpoint', if_exists='replace')
+        if VERBOSE: logger.debug(f'checkpoint.boxes: {height}')
 
         # execute as transaction
         with eng.begin() as con:
@@ -96,7 +98,7 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
             sql = f'''
                 with spent as (
                     select box_id
-                    from checkpoint_{BOXES}
+                    from checkpoint.{BOXES}
                     where is_unspent::boolean = false
                 )
                 delete from {BOXES} t
@@ -111,7 +113,7 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
             sql = f'''
                 insert into {BOXES} (box_id, height, is_unspent, nerg)
                     select c.box_id, c.height, c.is_unspent, c.nerg
-                    from checkpoint_{BOXES} c
+                    from checkpoint.{BOXES} c
                         left join {BOXES} b on b.box_id = c.box_id
                     where c.is_unspent::boolean = true
                         and b.box_id is null
@@ -166,6 +168,8 @@ async def get_all(urls) -> dict:
         if retries > 0:
             logger.warning(f'WARN: {retries} retries; sleeping for 20s.')
             sleep(20)
+            retries = 1
+            res = {}
     
     return res
 
@@ -269,8 +273,9 @@ async def process(args, t, height: int=-1) -> dict:
                 for tx in transactions['transactions']:
                     unspent = await del_inputs(tx['inputs'], unspent)
                     unspent = await add_outputs(tx['outputs'], unspent, blk)
-                    if PLUGINS.token:
-                        tokens = await token.process(transactions['transactions'], tokens, blk, is_plugin=True, args=args)
+                # TODO: move this to separate process
+                if PLUGINS.token:
+                    tokens = await token.process(transactions['transactions'], tokens, blk, is_plugin=True, args=args)
 
             # checkpoint
             if VERBOSE: logger.debug('Checkpointing...')
@@ -321,6 +326,21 @@ class App:
     def stop(self):
         logger.info("main.app:: Fin.")
 
+    def get_mempool():
+        res = requests.get(f'{NODE_API}/transactions/unconfirmed')
+        if res.ok:
+            mempool = res.json()
+            # TODO: what is needed from the mempool? output boxes? registers? assets?
+            return {
+                'status': 'success',
+                'transaction_count': len(mempool),
+            }
+        else:
+            return {
+                'status': 'error',
+                'transaction_count': None,
+            }
+
     # find all new currnet blocks
     async def process(self, args, height):
         # init timer
@@ -369,6 +389,8 @@ class App:
                         if infinity_counter%15 == 0:
                             logger.warning(f'''({current_height}) {t.split()} Waiting for next block...''')
 
+                    # TODO: update mempool
+
                     infinity_counter += 1
                     sleep(1)
 
@@ -377,6 +399,9 @@ class App:
                     last_height = -1
                     try: sys.exit(0)
                     except SystemExit: os._exit(0)
+
+            # new block found
+            RECENT_BLOCKS[current_height] = time()
 
             # cleanup audit log
             logger.debug('Cleanup audit log...')
@@ -489,10 +514,15 @@ if __name__ == '__main__':
                 asyncio.run(prices.process(is_plugin=True, args=args))
 
             # DROP-N-POP
-            for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token']:
-                logger.info(f'main:: {tbl.upper()}...')
-                res = asyncio.run(dnp(tbl))
-                logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
+            for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status', 'token_free', 'token_staked', 'token_locked']:
+                logger.debug(f'refreshing matview {tbl}')
+                res = requests.get(f'http://danaides-api:7000/api/tasks/refresh/{tbl.lower()}/')
+                if res.ok:
+                    logger.info(f'''main:: refresh {tbl.upper()} complete''')
+                    # logger.info(f'''main:: processing table {tbl.upper()}, uid: {res.json()['uid']}''')
+                else:
+                    logger.error(f'main:: error requesting refresh for table, {tbl.upper()}...')
+                # logger.debug(f'''main:: {tbl.upper()} compete ({res['row_count_before']}/{res['row_count_after']} before/after rows)''')
 
             # rebuild indexes after drop'n'pop
             # logger.debug(f'''main:: build indexes''')

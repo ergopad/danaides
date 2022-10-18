@@ -69,6 +69,25 @@ _NOTE_: danaides_api is the container that will create the needed tables, not da
 <br>
 From scratch, all tables and views will be created once you start docker compose.  This may be handy if changes are made and there is no clear path to sql migration, simply drop database and start over.<br>
 
+## SQL Migrations
+> `alembic init alembic`<br>
+<br>
+Update env.py<br>
+> `import sqlalchemy.ext.declarative as dec`
+> `from os import getenv`
+> `config.set_main_option("sqlalchemy.url", f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DB')}")`
+> `SqlAlchemyBase = dec.declarative_base()`
+> `target_metadata = SqlAlchemyBase.metadata`
+
+### Create Intial Migration
+> `docker exec -it danaides-alembic bash`
+> `alembic revision --autogenerate -m "Initial migration."`
+> `alembic upgrade head`
+
+### Create More Migration
+> `alembic revision --autogenerate -m "Added new table."`
+> `?? alembic upgrade head`
+
 ### Notes
 - The API service builds the database objects, so must complete for danaides to run; restart if needed.
 - The first run through will take some time to build boxes and then utxos table.

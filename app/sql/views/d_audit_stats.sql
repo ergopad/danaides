@@ -1,4 +1,4 @@
-create or replace view v_audit_stats as
+create materialized view audit_stats as
 	with ss as (
 		select created_at
 			, lag(created_at) over(order by created_at) as prev
@@ -14,4 +14,7 @@ create or replace view v_audit_stats as
 	where created_at is not null
 		-- and service = 'boxes'
 	group by service
-;
+	
+    with no data;
+
+create unique index uq_audit_stats on audit_stats (service);
