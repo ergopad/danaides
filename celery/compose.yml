@@ -1,0 +1,93 @@
+version: '3.9'
+
+services:
+  d-redis:
+    container_name: d-redis
+    image: redis:alpine
+    ports:
+      - 46379:6379
+    networks:
+      - danaides-net
+
+  d-prometheus:
+    container_name: d-prometheus
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - 49090:9090
+    networks:
+      - danaides-net
+
+  d-grafana:
+    container_name: d-grafana
+    image: grafana/grafana
+    depends_on:
+      - d-prometheus
+    ports:
+      - 43000:3000
+    networks:
+      - danaides-net
+
+  d-worker:
+    container_name: d-worker
+    env_file: ${ENV_FILE}
+    build: ./
+    user: nobody
+    volumes:
+      - ./data:/data
+    networks:
+      - ergopad-net
+      - danaides-net
+    environment:
+      CELERY_BROKER_URL: redis://d-redis
+      CELERY_RESULT_BACKEND: redis://d-redis
+      PYTHONPATH: /data
+    depends_on:
+      - d-redis
+    entrypoint: celery
+    command: -A tasks worker -l info -E
+
+  d-flower:
+    container_name: d-flower
+    env_file: ${ENV_FILE}
+    build: ./
+    volumes:
+      - ./data:/data
+    working_dir: /data
+    ports:
+      - 45555:5555
+    networks:
+      - ergopad-net
+      - danaides-net
+    environment:
+      CELERY_BROKER_URL: redis://d-redis
+      CELERY_RESULT_BACKEND: redis://d-redis
+    depends_on:
+      - d-worker
+      - d-redis
+    command: celery -A tasks flower
+
+  d-exporter:
+    container_name: d-exporter
+    # image: danihodovic/celery-exporter
+    image: ovalmoney/celery-exporter
+    depends_on:
+      - d-redis
+    ports:
+      - 49808:9808
+    networks:
+      - ergopad-net
+      - danaides-net
+    profiles:
+      - exporter
+    environment:
+      CE_BROKER_URL: redis://d-redis
+      CELERY_EXPORTER_BROKER_URL: redis://d-redis
+      CELERY_EXPORTER_LISTEN_ADDRESS: 0.0.0.0:9808
+
+networks:
+  danaides-net:
+    driver: bridge
+  ergopad-net:
+    external: true
