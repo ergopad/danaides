@@ -3,18 +3,23 @@ from time import time
 from fastapi import APIRouter
 from utils.db import eng
 from requests import get, post
+from os import getenv
 
 tasks_router = r = APIRouter()
+
+USE_CELERY = getenv('USE_CELERY', 'False').lower() in ('true', '1', 't')
 
 @r.get("/refresh/{matview}")
 async def refresh_matview(matview):
     try:
-        # with eng.begin() as con:
-        #     sql = f'''refresh materialized view concurrently {matview}'''
-        #     con.execute(sql)
-        res = post('http://d-flower:5555/api/task/async-apply/tasks.refresh_matview', json={'args':[matview]})
-        if res.ok: logger.debug(res.text)
-        else: logger.warning(res.status_code)
+        if USE_CELERY:
+            res = post('http://d-flower:5555/api/task/async-apply/tasks.refresh_matview', json={'args':[matview]})
+            if res.ok: logger.debug(res.text)
+            else: logger.warning(res.status_code)
+        else:
+            with eng.begin() as con:
+                sql = f'''refresh materialized view concurrently {matview}'''
+                con.execute(sql)
 
     except Exception as e:
         logger.error(f'ERR: {myself()}; {e}')
