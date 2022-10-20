@@ -66,6 +66,21 @@ services:
       - net
       # - ergopad-net # join existing network
 
+  danaides-alembic:
+    container_name: danaides-alembic
+    env_file: ${ENV_FILE}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes: 
+     - ./alembic:/app/alembic
+     - ./alembic.ini:/app/alembic.ini
+    networks:
+      - ergopad-net
+    profiles:
+      - alembic
+    command: tail /dev/null -f
+
 volumes:
   postgres_vol:
 
