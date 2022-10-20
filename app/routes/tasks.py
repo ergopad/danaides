@@ -1,29 +1,26 @@
-# import asyncio
-
 from utils.logger import logger, myself
-# from concurrent.futures.process import ProcessPoolExecutor
-from http import HTTPStatus
 from time import time
-from fastapi import BackgroundTasks, APIRouter, Depends # , HTTPException, status, FastAPI
-from typing import Dict
-from uuid import UUID, uuid4
-# from pydantic import BaseModel, Field
-from utils.db import eng, text
+from fastapi import APIRouter
+from utils.db import eng
+from requests import get, post
 
 tasks_router = r = APIRouter()
 
 @r.get("/refresh/{matview}")
 async def refresh_matview(matview):
     try:
-        with eng.begin() as con:
-            sql = f'''refresh materialized view {matview}'''
-            con.execute(sql)
+        # with eng.begin() as con:
+        #     sql = f'''refresh materialized view concurrently {matview}'''
+        #     con.execute(sql)
+        res = post('http://d-flower:5555/api/task/async-apply/tasks.refresh_matview', json={'args':[matview]})
+        if res.ok: logger.debug(res.text)
+        else: logger.warning(res.status_code)
 
     except Exception as e:
         logger.error(f'ERR: {myself()}; {e}')
 
 @r.get("/refreshall/")
-async def refresh_all_matviews(matview):
+async def refresh_all_matviews():
     try:
         with eng.begin() as con:
             sql = f'''
@@ -32,10 +29,10 @@ async def refresh_all_matviews(matview):
                 where schemaname = 'public'
                     -- and left(viewname, 2) = 'v_'
             '''
-            res = con.execunte(sql).fetchall()
+            res = con.execute(sql).fetchall()
 
         for r in res:
-            mv = r['viewname']
+            mv = r['matviewname']
             try: 
                 logger.debug(f'refreshing table {mv}')
                 await refresh_matview(mv)
