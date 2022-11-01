@@ -22,9 +22,17 @@ def init_db():
     attempt = 5
     while attempt > 0:
         try:
-            sql = 'select service from audit_log where height = -1'
+            # sql = 'select service from audit_log where height = -1'
+            sql = 'select count(*) as i alembic_version'
+            res = None
             with eng.begin() as con:
-                con.execute(sql)
+                res = con.execute(sql).fetchone()
+
+            # init database; need to run alembic
+            if res == 0:
+                logger.error('ERR::blank database; likely need to run alembic upgrade head')
+                exit(1)
+
             attempt = 0
 
         except Exception as e:
