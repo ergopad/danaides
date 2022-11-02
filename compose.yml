@@ -17,10 +17,13 @@ services:
       - ./app:/app
     networks:
       - net
-      # - ergopad-net # join existing network
+      - ergopad-net
     depends_on:
-      - danaides-api
-    command: python main.py --sleep 10
+      danaides-db:
+        condition: service_healthy
+      danaides-api:
+        condition: service_started
+    command: python main.py
     # command: watchmedo auto-restart --recursive --pattern="*.py" --directory="/app" -- python -m main
     # command: tail /dev/null -f
 
@@ -43,7 +46,10 @@ services:
       - net
       # - ergopad-net # join existing network
     depends_on:
-      - danaides-db
+      danaides-db:
+        condition: service_healthy
+      danaides-alembic:
+        condition: service_completed_successfully
     command: uvicorn api:app --reload --workers 1 --reload-dir /app --host 0.0.0.0 --port 7000 --proxy-headers --use-colors
     # command: tail /dev/null -f
 
@@ -56,6 +62,11 @@ services:
     security_opt:
       - seccomp:unconfined
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB} -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes: 
       - postgres_vol:/var/lib/postgresql/data:cached
       - ./app/sql/config/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -66,11 +77,27 @@ services:
       - net
       # - ergopad-net # join existing network
 
+  danaides-alembic:
+    container_name: danaides-alembic
+    env_file: ${ENV_FILE}
+    build:
+      context: ./alembic
+      dockerfile: Dockerfile
+    volumes: 
+     - ./alembic:/app
+    networks:
+      - net
+    depends_on:
+      danaides-db:
+        condition: service_healthy
+    # command: tail /dev/null -f
+    command: alembic upgrade head
+
 volumes:
   postgres_vol:
 
 networks:
   net:
     driver: bridge
-  # ergopad-net:
-  #   external: true
+  ergopad-net:
+    external: true

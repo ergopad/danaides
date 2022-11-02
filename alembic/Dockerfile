@@ -1,5 +1,6 @@
 FROM python:3
 
+COPY ./alembic /app
 WORKDIR /app
 ENV PYTHONPATH "${PYTHONPATH}:/app"
 
@@ -7,6 +8,7 @@ ENV PYTHONPATH "${PYTHONPATH}:/app"
 RUN apt-get update \
   # && apt-get -y install netcat gcc postgresql \
   && apt-get -y install nano curl \
+  && apt-get -y install postgresql-client \
   && apt-get clean
 
 # install python dependencies
