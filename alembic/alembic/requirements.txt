@@ -1,0 +1,7 @@
+requests
+colorlog
+
+alembic
+alembic_utils
+sqlalchemy
+psycopg2-binary

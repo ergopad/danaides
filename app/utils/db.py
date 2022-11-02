@@ -22,17 +22,26 @@ def init_db():
     attempt = 5
     while attempt > 0:
         try:
-            sql = 'select service from audit_log where height = -1'
+            sql = 'select count(*) as i from alembic_version'
+            res = None
             with eng.begin() as con:
-                con.execute(sql)
-            attempt = 0
+                res = con.execute(sql).fetchone()
+
+            if res['i'] == 1:
+                logger.debug('alembic upgrade head successful')
+                attempt = 0
+            else:
+                logger.error('ERR::blank database; likely waiting on alembic upgrade head')
+                attempt = 5
 
         except Exception as e:
             attempt -= 1
             if attempt == 0:
-                logger.error(f'ERR: Initializing database in 5 attempts; {e}')
+                logger.error(f'ERR: 5 unsuccessful attempts; will try again later...{e}')
+                attempt = 5
+                sleep(5)
             else:
-                logger.warning(f'Failed to access database (attempt {5-attempt})')
+                logger.warning(f'Failed to access database (attempt {5-attempt}): {e}')
             sleep(1)
 
     # add extensions
@@ -60,10 +69,10 @@ def init_db():
 
     # build tables, if needed
     try:
-        logger.debug(f'getting metadata')
+        logger.debug(f'deprecated - getting metadata')
         # metadata_obj = MetaData(eng)
-        metadata_obj, TABLES = get_tables(eng)
-        metadata_obj.create_all(eng)
+        # metadata_obj, TABLES = get_tables(eng)
+        # metadata_obj.create_all(eng)
 
     except Exception as e:
         logger.error(f'ERR: {e}')
@@ -76,8 +85,6 @@ def init_db():
             select matviewname
             from pg_matviews 
             where schemaname = 'public'
-                -- remove all? or, identify through naming convention?
-                -- and left(matviewname, 2) = 'd_'
         '''
         with eng.begin() as con:
             res = con.execute(sql).fetchall()
@@ -139,13 +146,3 @@ async def build_indexes():
     except Exception as e:
         logger.error(f'ERR: {e}')
 
-# create tmp version of table 
-async def build_tmp(tbl:str):
-    try:
-        metadata_obj, TABLES = get_tables(eng)
-        tmp = TABLES[tbl]
-        tmp.name = f'tmp_{tbl}'
-        tmp.create() 
-        
-    except Exception as e:
-        logger.error(f'ERR: {myself()}; {e}')
