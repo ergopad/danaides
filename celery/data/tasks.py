@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, text
 
 ### INIT
 app = Celery("tasks", broker=getenv('CELERY_BROKER_URL', 'redis://'), backend=getenv('CELERY_RESULT_BACKEND', 'd-redis'))
-app.conf.CELERY_ACCEPT_CONTENT = ['pickle', 'json', 'msgpack', 'yaml']
+app.conf.accept_content = ['pickle', 'json', 'msgpack', 'yaml']
 app.conf.CELERY_WORKER_SEND_TASK_EVENTS = True
 
 DB_DANAIDES = f"postgresql://{getenv('DANAIDES_USER')}:{getenv('DANAIDES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DB')}"
