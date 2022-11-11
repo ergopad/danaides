@@ -1,7 +1,8 @@
 # QUICK START
 > git clone https://github.com/ergo-pad/danaides.git<br>
 > docker compose up<br>
-
+# if using the default env
+> env $(cat alt.env) docker compose up<br>
 ## ENV
 Minimally update when creating `.env` file:<br>
 > NODE_URL (ip address of ergonode)<br>
@@ -67,12 +68,12 @@ If using own database, create the user that will perform all CRUD actions; all d
 >`create user pirene with password xyzpdq;`<br>
 
 Update privileges.  Since tables are recreated for performance, the default privileges must be updated<br>
->`alter default privileges in schema public grant select, insert, update, delete on tables to pirene;`<br>
->`alter default privileges in schema public grant usage on sequences to pirene;`<br>
+>`alter default privileges in schema public, checkpoint grant select, insert, update, delete on tables to pirene;`<br>
+>`alter default privileges in schema public, checkpoint grant usage on sequences to pirene;`<br>
 
 ### NOTE: this may not be needed...
 Since using drop-n-pop method, also initial creation of tables, this makes sense, although above permissions may be enough (TODO: clarify)<br>
-> `grant create on schema public to pirene;`<br>
+> `grant create on schema public, checkpoint to pirene;`<br>
 
 ## API
 The API is used to extract data from the Danaides database in JSON format.  It is also used to refresh the materizlized views and maintain some database integrity during startup, therefore is important to the normal workflow.<br>
@@ -83,7 +84,17 @@ _Note: early versions of Danaides did not depend on the api container, like now.
 
 # SQL Migrations
 
-This section is a work in progress.  The schema has been developed in SqlAlchemy, and is not being converted to used alembic so that version can be properly migrated.  Currently this section is a drop spot for notes and not currently used.<br>
+Much of this section is developer notes.  From a blank database (including the init.sql commands for user/extension setup), danaides should only need:<br>
+> cd alembic<br>
+> docker compose up<br>
+<br>
+.env should contain the POSTGRES_* variables used in the main danaides folder.<br>
+<br>
+_Note: due to the SQL work with alembic, it makes sense to keep it outside the main docker since this can be setup to use own database and not built in.  It is likely that some of this will be moved to an all-in-one startup docker at some point._
+
+<hr>
+
+The rest of this section is a work in progress.  The schema has been developed in SqlAlchemy, and is not being converted to used alembic so that version can be properly migrated.  Currently this section is a drop spot for notes and not currently used.<br>
 <br>
 To perform these operations, the d-alembic container can be used by referncing the profile:
 > `docker exec -it danaides-alembic bash`
@@ -94,19 +105,19 @@ To perform these operations, the d-alembic container can be used by referncing t
 <br>
 
 Update env.py<br>
-> `import sqlalchemy.ext.declarative as dec`
-> `from os import getenv`
-> `config.set_main_option("sqlalchemy.url", f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DB')}")`
-> `SqlAlchemyBase = dec.declarative_base()`
-> `target_metadata = SqlAlchemyBase.metadata`
+> `import sqlalchemy.ext.declarative as dec`<br>
+> `from os import getenv`<br>
+> `config.set_main_option("sqlalchemy.url", f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DB')}")`<br>
+> `SqlAlchemyBase = dec.declarative_base()`<br>
+> `target_metadata = SqlAlchemyBase.metadata`<br>
 
 ### Create Intial Migration
-> `alembic revision --autogenerate -m "Initial migration."`
-> `alembic upgrade head`
+> `alembic revision --autogenerate -m "Initial migration."`<br>
+> `alembic upgrade head`<br>
 
 ### Create More Migrations
-> `alembic revision --autogenerate -m "Added new table."`
-> `?? alembic upgrade head`
+> `alembic revision --autogenerate -m "Added new table."`<br>
+> `?? alembic upgrade head`<br>
 
 <br><hr><br>
 
