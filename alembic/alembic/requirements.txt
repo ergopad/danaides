@@ -4,4 +4,6 @@ colorlog
 alembic
 alembic_utils
 sqlalchemy
-psycopg2-binary
+# not using psycopg2-binary due to aarm64 compatibility issue
+psycopg2
+
