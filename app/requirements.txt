@@ -4,6 +4,7 @@ base58
 pydantic
 aiohttp
 pandas
+prettytable
 
 fastapi
 uvicorn

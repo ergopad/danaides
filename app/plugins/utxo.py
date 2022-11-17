@@ -76,19 +76,19 @@ async def prepare_destination(boxes_tablename:str):
 
     try:    
         with eng.begin() as con:
-            # remove unspent boxes from utxos
-            sql = text(f'''
-                with spent as (
-                    select a.box_id, a.height
-                    from utxos a
-                        left join {boxes_tablename} b on a.box_id = b.box_id
-                    where b.box_id is null
-                )
-                delete from utxos t
-                using spent s
-                where s.box_id = t.box_id
-                    and s.height = t.height
-            ''')
+                # remove unspent boxes from utxos
+                sql = text(f'''
+                    with spent as (
+                        select a.box_id, a.height
+                        from utxos a
+                            left join {boxes_tablename} b on a.box_id = b.box_id
+                        where b.box_id is null
+                    )
+                    delete from utxos t
+                    using spent s
+                    where s.box_id = t.box_id
+                        and s.height = t.height
+                ''')
             if VERBOSE: logger.debug(sql)
             con.execute(sql)
 
@@ -180,7 +180,7 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                             retries += 1
                             logger.warning(f'get ordered json retry: {retries}; {e}')
                             pass
-                    logger.debug(f'Boxes: {box_count}; UTXOs: {len(utxo)}')
+                    logger.debug(f'Boxes: {box_count-1}; UTXOs: {len(utxo)-1}')
 
                     # fetch box info
                     for ergo_tree, box_id, box_assets, registers, nergs, creation_height, transaction_id, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[2]['value'], u[2]['creationHeight'], u[2]['transactionId'], u[1]] for u in utxo if u[0] == 200]:
@@ -223,7 +223,7 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                     await checkpoint(utxos)
 
                     # track utxos height here (since looping through boxes)
-                    notes = f'''{len(utxos)} utxos'''
+                    notes = f'''{len(utxos)-1} utxos'''
                     sql = text(f'''
                         insert into audit_log (height, service, notes)
                         values ({max_height}, 'utxo', '{notes}')

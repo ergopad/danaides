@@ -6,6 +6,7 @@ import requests
 
 from time import sleep, time
 from config import dotdict
+from prettytable import PrettyTable
 from utils.db import eng, text
 from utils.logger import logger, myself, Timer, printProgressBar, LEIF
 from utils.ergo import get_node_info, get_genesis_block, NODE_API
@@ -16,6 +17,7 @@ from plugins import prices, utxo, token
 
 #region INIT
 # GLOBALs
+SUMMARY_INFO = {'time': time()}
 RECENT_BLOCKS = {}
 PRETTYPRINT = False
 VERBOSE = False
@@ -122,14 +124,6 @@ async def checkpoint(height: int, unspent: dict, tokens: dict) -> None:
             if VERBOSE: logger.debug(sql)
             con.execute(sql)
             if VERBOSE: logger.debug(f'add unspent')
-
-            sql = f'''
-                insert into audit_log (height, service)
-                values ({int(height)-1}, '{BOXES}')
-            '''
-            if VERBOSE: logger.debug(sql)
-            con.execute(sql)      
-            if VERBOSE: logger.debug(f'update audit log')  
 
         # tokens
         if tokens == {}:
@@ -358,6 +352,7 @@ class App:
 
     # wait for new height
     def hibernate(self, last_height):
+        global SUMMARY_INFO
         try:
             current_height = last_height
             infinity_counter = 0
@@ -374,7 +369,17 @@ class App:
             '''
             with eng.begin() as con:
                 res = con.execute(sql) 
-            logger.warning('\n\t'+'\n\t'.join([f'''main.hibernate:: {r['tbl']}: {r['i']} rows, {r['j']} height''' for r in res]))
+
+            # logger.warning('\n\t'+'\n\t'.join([f'''main.hibernate:: {r['tbl']}: {r['i']} rows, {r['j']} height''' for r in res]))
+            pt = PrettyTable()
+            pt.field_names = ['table', 'height', 'count', 'last']
+            for r in res:
+                pt.add_row([r['tbl'], f"{r['j']:,}", f"{r['i']:,}", SUMMARY_INFO.get(r['tbl'], '')])
+                SUMMARY_INFO[r['tbl']] = f"{r['i']:,}"
+
+            pt.add_row(['', '', 'time', f"{time()-SUMMARY_INFO['time']:.2f}s"])
+            SUMMARY_INFO['time'] = time()
+            logger.info(f'\n{pt}')
 
             # chill for next block
             logger.debug('Hibernating...')
@@ -436,6 +441,7 @@ def cli():
     parser.add_argument("-F", "--fetchinterval", help="Begin at this height", type=int, default=FETCH_INTERVAL)
     parser.add_argument("-P", "--prettyprint", help="Progress bar vs. scrolling", action='store_true')
     parser.add_argument("-O", "--once", help="When complete, finish", action='store_true')
+    parser.add_argument("-S", "--includespent", help="Also track spent UTXOs", action='store_true')
     parser.add_argument("-X", "--ignoreplugins", help="Only process boxes", action='store_true')
     parser.add_argument("-V", "--verbose", help="Be wordy", action='store_true')
     
@@ -450,13 +456,30 @@ def cli():
     if args.once: logger.warning(f'Processing once, then exit...')
     if args.verbose: logger.warning(f'Verbose...')
     if args.fetchinterval != 1500: logger.warning(f'Fetch interval: {args.fetchinterval}...')
+    if args.includespent: logger.warning(f'Storing spent boxes...')
 
     PRETTYPRINT = args.prettyprint
     VERBOSE = args.verbose
-    FETCH_INTERVAL = args.fetchinterval    
+    FETCH_INTERVAL = args.fetchinterval
     BOXES = ''.join([i for i in args.juxtapose if i.isalpha()]) # only-alpha tablename
 
     return args
+
+def ping_danaides_api():
+    i:int = 0
+    while i >= 0:
+        try:
+            res = requests.get(f'http://danaides-api:7000/api/ping')
+            if res.ok:
+                return
+        
+        except Exception as e:
+            pass
+
+        if i%60 == 0:
+            logger.warning(f'Waiting on Danaides connection [http://danaides-api:7000/api/ping]...')
+        i += 1
+        sleep(1)
 
 if __name__ == '__main__':
     
@@ -513,7 +536,8 @@ if __name__ == '__main__':
                 logger.warning('main:: PLUGIN: Prices...')
                 asyncio.run(prices.process(is_plugin=True, args=args))
 
-            # DROP-N-POP
+            # rebuild intermediate views
+            ping_danaides_api()
             for tbl in ['staking', 'vesting', 'assets', 'balances', 'tokenomics_ergopad', 'tokenomics_paideia', 'unspent_by_token', 'token_status', 'token_free', 'token_staked', 'token_locked']:
                 logger.debug(f'refreshing matview {tbl}')
                 res = requests.get(f'http://danaides-api:7000/api/tasks/refresh/{tbl.lower()}/')
