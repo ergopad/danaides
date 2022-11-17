@@ -25,7 +25,11 @@ create table if not exists alembic_version (
 grant all privileges on database danaides to pirene; -- ?? this seems a bit much
 grant connect on database danaides TO pirene;
 
-alter default privileges in schema public grant select, insert, update, delete on tables to pirene;
-alter default privileges in schema public grant usage on sequences to pirene;
+alter default privileges in schema public, checkpoint grant select, insert, update, delete on tables to pirene;
+alter default privileges in schema public, checkpoint grant usage on sequences to pirene;
 
 grant create on schema public to pirene;
+
+-- for existing databases, this may help
+-- grant all privileges on all tables in schema public, checkpoint to pirene;
+-- grant all privileges on all sequences in schema public, checkpoint to pirene; 
