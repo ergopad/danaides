@@ -10,7 +10,9 @@ from time import sleep
 # from random import choices
 
 DB_DANAIDES = f"postgresql://{getenv('DANAIDES_USER')}:{getenv('DANAIDES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DB')}"
+DB_POSTGRES = f"postgresql://{getenv('POSTGRES_USER')}:{getenv('POSTGRES_PASSWORD')}@{getenv('POSTGRES_HOST')}:{getenv('POSTGRES_PORT')}/{getenv('POSTGRES_DB')}"
 eng = create_engine(DB_DANAIDES)
+eng_pg = create_engine(DB_POSTGRES)
 
 @compiles(DropTable, "postgresql")
 def _compile_drop_table(element, compiler, **kwargs):
@@ -18,6 +20,14 @@ def _compile_drop_table(element, compiler, **kwargs):
 
 # create db objects if they don't exists
 def init_db():
+    # handle permissions in case using non-danaides db
+    sql = f'''
+        grant all privileges on all tables in schema public, checkpoint to pirene;
+        grant all privileges on all sequences in schema public, checkpoint to pirene; 
+    '''
+    with eng_pg.begin() as con:
+        con.execute(sql)
+
     # if new db, make sure hstore extension exists
     attempt = 5
     while attempt > 0:

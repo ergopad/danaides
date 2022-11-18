@@ -76,19 +76,19 @@ async def prepare_destination(boxes_tablename:str):
 
     try:    
         with eng.begin() as con:
-                # remove unspent boxes from utxos
-                sql = text(f'''
-                    with spent as (
-                        select a.box_id, a.height
-                        from utxos a
-                            left join {boxes_tablename} b on a.box_id = b.box_id
-                        where b.box_id is null
-                    )
-                    delete from utxos t
-                    using spent s
-                    where s.box_id = t.box_id
-                        and s.height = t.height
-                ''')
+            # remove unspent boxes from utxos
+            sql = text(f'''
+                with spent as (
+                    select a.box_id, a.height
+                    from utxos a
+                        left join {boxes_tablename} b on a.box_id = b.box_id
+                    where b.box_id is null
+                )
+                delete from utxos t
+                using spent s
+                where s.box_id = t.box_id
+                    and s.height = t.height
+            ''')
             if VERBOSE: logger.debug(sql)
             con.execute(sql)
 
