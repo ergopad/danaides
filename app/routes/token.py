@@ -130,6 +130,37 @@ async def get_token_price(token_id: str):
         'price': res['token_price'],
     }
 
+@r.get("/candles/{token_id}")
+async def get_token_price(token_id: str):
+    sql = text(f'''
+        select date, price, market
+        from ohlc 
+        where token_id = :token_id
+        order by date desc
+    ''')
+    with eng.begin() as con:
+        res = con.execute(sql, {'token_id': token_id}).fetchall()
+
+    price = res[0]['price']
+    dateStamp = res[0]['date']
+    market = res[0]['market']
+
+    return {
+        'id': token_id,
+        'price': price,
+        'marketCap': 0,
+        'allTimeHigh': 0,
+        'allTimeLow': 0,
+        'dateStamp': dateStamp,
+        'supply': 0,
+        'total': 0, # ?? incl burned
+
+        'market': {
+            'name': market,
+            'dataPoints': res,
+        }
+    }
+
 @r.get("/info/")
 async def mint(token: Token):
     return {}
