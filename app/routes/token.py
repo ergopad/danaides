@@ -145,15 +145,56 @@ async def get_token_price(token_id: str):
     dateStamp = res[0]['date']
     market = res[0]['market']
 
+    sql = text(f'''
+        with tkn as (
+            select amount/power(10, decimal) as tot
+            from tokens 
+            where token_id = '1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489'
+        )
+        select max(price) as ath
+            , min(price) as atl
+            , tkn.tot
+        from ohlc 
+        full join tkn
+        where token_id = :token_id
+            and date > now() - interval '52 weeks'
+            and price is not null
+        group by tkn.tot
+    ''')
+    with eng.begin() as con:
+        res = con.execute(sql, {'token_id': token_id}).fetchone()
+
+    allTimeHigh = res['ath']
+    allTimeLow = res['atl']
+    totalSupply = res['tot']
+
+    sql = text(f'''
+        select token_name
+            , k.token_id
+            , k.token_price
+            , k.supply_actual as current_total_supply
+            , t.amount/power(10, t.decimals) as initial_total_supply
+            , (t.amount - k.supply)/power(10, t.decimals) as burned
+            , k.token_price * (supply - vested - emitted - stake_pool)/power(10, t.decimals) as market_cap
+            , (supply - vested - emitted - stake_pool)/power(10, t.decimals) as in_circulation
+        from tokenomics_paideia k
+            join tokens t on t.token_id = k.token_id
+    ''')
+    # with eng.begin() as con:
+    #     res = con.execute(sql).fetchone()
+
+    # currentSupply = res['current_total_supply']
+    # marketCap = res['market_cap']
+
     return {
         'id': token_id,
         'price': price,
-        'marketCap': 0,
-        'allTimeHigh': 0,
-        'allTimeLow': 0,
+        'marketCap': 0, # marketCap
+        'allTimeHigh': allTimeHigh,
+        'allTimeLow': allTimeLow,
         'dateStamp': dateStamp,
-        'supply': 0,
-        'total': 0, # ?? incl burned
+        'supply': 0, # currentSupply
+        'total': totalSupply, # ?? incl burned
 
         'market': {
             'name': market,
