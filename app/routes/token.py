@@ -24,6 +24,10 @@ class Token(BaseModel):
     vest_tree: str # 
     proxy_address: str = '245957934c20285ada547aa8f2c8e6f7637be86a1985b3e4c36e4e1ad8ce97ab'
 
+class AddressTokens(BaseModel):
+    addresses: List[str]
+    tokens: List[str]
+
 # comments show paideia values for reference
 class TokenInventoryDAO(BaseModel):
     addresses: List[str]
@@ -169,6 +173,116 @@ async def get_token_price(token_id: str):
         'decimals': res['decimals'],
         'price': res['token_price'],
     }
+
+@r.get("/candles/{token_id}")
+async def get_token_price(token_id: str):
+    sql = text(f'''
+        select date, price, market
+        from ohlc 
+        where token_id = :token_id
+        order by date desc
+    ''')
+    with eng.begin() as con:
+        res = con.execute(sql, {'token_id': token_id}).fetchall()
+
+    price = res[0]['price']
+    dateStamp = res[0]['date']
+    market = res[0]['market']
+    dat = res
+
+    sql = text(f'''
+        with tkn as (
+            select amount/power(10, decimals) as tot
+            from tokens 
+            where token_id = '1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489'
+        )
+        select max(price) as ath
+            , min(price) as atl
+            , tkn.tot
+        from ohlc 
+        cross join tkn
+        where token_id = :token_id
+            and date > now() - interval '52 weeks'
+            and price is not null
+        group by tkn.tot
+    ''')
+    with eng.begin() as con:
+        res = con.execute(sql, {'token_id': token_id}).fetchone()
+
+    allTimeHigh = res['ath']
+    allTimeLow = res['atl']
+    totalSupply = res['tot']
+
+    sql = text(f'''
+        select token_name
+            , k.token_id
+            , k.token_price
+            , k.supply_actual as current_total_supply
+            , t.amount/power(10, t.decimals) as initial_total_supply
+            , (t.amount - k.supply)/power(10, t.decimals) as burned
+            , k.token_price * (supply - vested - emitted - stake_pool)/power(10, t.decimals) as market_cap
+            , (supply - vested - emitted - stake_pool)/power(10, t.decimals) as in_circulation
+        from tokenomics_paideia k
+            join tokens t on t.token_id = k.token_id
+    ''')
+    # with eng.begin() as con:
+    #     res = con.execute(sql).fetchone()
+
+    # currentSupply = res['current_total_supply']
+    # marketCap = res['market_cap']
+
+    return {
+        'id': token_id,
+        'price': price,
+        'marketCap': 0, # marketCap
+        'allTimeHigh': allTimeHigh,
+        'allTimeLow': allTimeLow,
+        'dateStamp': dateStamp,
+        'supply': 0, # currentSupply
+        'total': totalSupply, # ?? incl burned
+
+        'market': {
+            'name': market,
+            'dataPoints': dat,
+        }
+    }
+
+@r.post("/exists/")
+async def exists(tid: AddressTokens):
+    try:
+        # TODO: validate address
+        addresses = "'"+("','".join(tid.addresses))+"'"
+        tokens = "'"+("','".join(tid.tokens))+"'"
+
+        # find free/staked tokens
+        sql = text(f'''
+            with tot as (
+                select address as adr
+                    , (each(assets)).key as tkn
+                    , (each(assets)).value as qty
+                from utxos
+                where address in ({addresses})
+            )
+            select adr, tkn, sum(qty::float)/power(10, t.decimals) as qty
+            from tot
+            where tkn in ({tokens})
+            group by adr, tkn, t.decimals
+        ''')
+        with eng.begin() as con:
+            res = con.execute(sql).fetchall()
+
+        # add any that have qty
+        exs = {}
+        for r in res:
+            if r['adr'] not in exs:
+                exs[r['adr']] = []
+            exs[r['adr']].append({r['tkn']: r['qty']})
+
+        return exs
+
+    except Exception as e:
+        logger.error(f'ERR: {myself()}; {e}')
+
 
 @r.get("/info/")
 async def mint(token: Token):
