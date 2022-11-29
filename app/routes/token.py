@@ -24,6 +24,10 @@ class Token(BaseModel):
     vest_tree: str # 
     proxy_address: str = '245957934c20285ada547aa8f2c8e6f7637be86a1985b3e4c36e4e1ad8ce97ab'
 
+class AddressTokens(BaseModel):
+    addresses: List[str]
+    tokens: List[str]
+
 # comments show paideia values for reference
 class TokenInventoryDAO(BaseModel):
     addresses: List[str]
@@ -144,6 +148,7 @@ async def get_token_price(token_id: str):
     price = res[0]['price']
     dateStamp = res[0]['date']
     market = res[0]['market']
+    dat = res
 
     sql = text(f'''
         with tkn as (
@@ -198,9 +203,46 @@ async def get_token_price(token_id: str):
 
         'market': {
             'name': market,
-            'dataPoints': res,
+            'dataPoints': dat,
         }
     }
+
+@r.post("/exists/")
+async def exists(tid: AddressTokens):
+    try:
+        # TODO: validate address
+        addresses = "'"+("','".join(tid.addresses))+"'"
+        tokens = "'"+("','".join(tid.tokens))+"'"
+
+        # find free/staked tokens
+        sql = text(f'''
+            with tot as (
+                select address as adr
+                    , (each(assets)).key as tkn
+                    , (each(assets)).value as qty
+                from utxos
+                where address in ({addresses})
+            )
+            select adr, tkn, sum(qty::float)/power(10, t.decimals) as qty
+            from tot
+            where tkn in ({tokens})
+            group by adr, tkn, t.decimals
+        ''')
+        with eng.begin() as con:
+            res = con.execute(sql).fetchall()
+
+        # add any that have qty
+        exs = {}
+        for r in res:
+            if r['adr'] not in exs:
+                exs[r['adr']] = []
+            exs[r['adr']].append({r['tkn']: r['qty']})
+
+        return exs
+
+    except Exception as e:
+        logger.error(f'ERR: {myself()}; {e}')
+
 
 @r.get("/info/")
 async def mint(token: Token):
