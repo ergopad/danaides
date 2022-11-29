@@ -147,7 +147,7 @@ async def get_token_price(token_id: str):
 
     sql = text(f'''
         with tkn as (
-            select amount/power(10, decimal) as tot
+            select amount/power(10, decimals) as tot
             from tokens 
             where token_id = '1fd6e032e8476c4aa54c18c1a308dce83940e8f4a28f576440513ed7326ad489'
         )
@@ -155,7 +155,7 @@ async def get_token_price(token_id: str):
             , min(price) as atl
             , tkn.tot
         from ohlc 
-        full join tkn
+        cross join tkn
         where token_id = :token_id
             and date > now() - interval '52 weeks'
             and price is not null
