@@ -29,6 +29,10 @@ class TokenInventoryDAO(BaseModel):
     addresses: List[str]
     tokens: List[Token]
 
+class AddressTokens(BaseModel):
+    addresses: List[str]
+    tokens: List[str]
+
 class Address(BaseModel):
     addresses: List[str]
 
@@ -45,6 +49,42 @@ async def daoMembership(token_inv: TokenInventoryDAO):
             membership[tkn.token_id] = res
 
         return membership
+
+    except Exception as e:
+        logger.error(f'ERR: {myself()}; {e}')
+
+@r.post("/exists/")
+async def exists(tid: AddressTokens):
+    try:
+        # TODO: validate address
+        addresses = "'"+("','".join(tid.addresses))+"'"
+        tokens = "'"+("','".join(tid.tokens))+"'"
+
+        # find free/staked tokens
+        sql = text(f'''
+            with tot as (
+                select address as adr
+                    , (each(assets)).key as tkn
+                    , (each(assets)).value as qty
+                from utxos
+                where address in ({addresses})
+            )
+            select adr, tkn, sum(qty::float)/power(10, t.decimals) as qty
+            from tot
+            where tkn in ({tokens})
+            group by adr, tkn, t.decimals
+        ''')
+        with eng.begin() as con:
+            res = con.execute(sql).fetchall()
+
+        # add any that have qty
+        exs = {}
+        for r in res:
+            if r['adr'] not in exs:
+                exs[r['adr']] = []
+            exs[r['adr']].append({r['tkn']: r['qty']})
+
+        return exs
 
     except Exception as e:
         logger.error(f'ERR: {myself()}; {e}')
