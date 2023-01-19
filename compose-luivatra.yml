@@ -48,8 +48,8 @@ services:
     depends_on:
       danaides-db:
         condition: service_healthy
-      danaides-alembic:
-        condition: service_completed_successfully
+#      danaides-alembic:
+#        condition: service_completed_successfully
     command: uvicorn api:app --reload --workers 5 --reload-dir /app --host 0.0.0.0 --port 7000 --proxy-headers --use-colors
     # command: tail /dev/null -f
 
