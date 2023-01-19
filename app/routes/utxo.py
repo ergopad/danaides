@@ -33,6 +33,6 @@ async def get_utxo_by_id(box_id: str):
         "creationHeight": res["creation_height"],
         "assets": assets,
         "additionalRegisters": res["registers"],
-        "transactionId": res["transaction:_id"],
+        "transactionId": res["transaction_id"],
         "index": 0
     }
