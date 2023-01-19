@@ -191,7 +191,7 @@ async def get_height(args, height: int=-1) -> int:
         sql = f'''
             select height 
             from audit_log 
-            where service in ('{BOXES}')
+            where service in ('utxo')
             order by created_at desc 
             limit 1
         '''
