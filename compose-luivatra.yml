@@ -90,8 +90,8 @@ services:
     depends_on:
       danaides-db:
         condition: service_healthy
-    command: tail /dev/null -f
-    # command: alembic upgrade head
+    # command: tail /dev/null -f
+    command: alembic upgrade head
 
 volumes:
   postgres_vol:
