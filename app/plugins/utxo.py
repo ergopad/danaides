@@ -85,7 +85,7 @@ async def prepare_destination(boxes_tablename:str):
                     select a.box_id, a.height
                     from utxos a
                         left join {boxes_tablename} b on a.box_id = b.box_id
-                    where b.box_id is null
+                    where b.index is null
                 )
                 delete from utxos t
                 using spent s
