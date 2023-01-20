@@ -66,7 +66,7 @@ async def get_utxo_by_ergotree(ergoTree: ErgoTreeHex,  offset: int = 0, limit: i
                 "assets": assets,
                 "additionalRegisters": row["registers"],
                 "transactionId": row["transaction_id"],
-                "index": res["index"]
+                "index": row["index"]
             })
 
     return result
