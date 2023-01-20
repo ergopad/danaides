@@ -53,7 +53,7 @@ async def checkpoint(utxos):
         # utxos
         with eng.begin() as con:
             sql = f'''
-                insert into utxos (box_id, ergo_tree, address, nergs, registers, assets, transaction_id, index, creation_height, height)
+                insert into utxos (box_id, ergo_tree, address, nergs, registers, assets, transaction_id, index, creation_height, height, assets_array)
                     select 
                         box_id::varchar(64)
                         , ergo_tree::text
@@ -65,6 +65,7 @@ async def checkpoint(utxos):
                         , box_index::int as index
                         , creation_height::int
                         , height::int
+                        , trim(both '"' from assets::text)::hstore[] as assets_array
                     from checkpoint.utxos
             '''
             con.execute(sql)
