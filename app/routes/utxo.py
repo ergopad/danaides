@@ -18,7 +18,7 @@ class ErgoTreeHex(BaseModel):
 @r.get("/{box_id}")
 async def get_utxo_by_id(box_id: str):
     sql = text(f'''
-        select id, box_id, ergo_tree, address, nergs, hstore_to_json_loose(registers) as registers, hstore_to_json_loose(assets_array) as assets, transaction_id, index, creation_height, height
+        select id, box_id, ergo_tree, address, nergs, hstore_to_json_loose(registers) as registers, array_to_json(assets_array) as assets, transaction_id, index, creation_height, height
         from utxos 
         where box_id = :box_id
     ''')
@@ -26,8 +26,9 @@ async def get_utxo_by_id(box_id: str):
         res = con.execute(sql, {'box_id': box_id}).fetchone()
 
     assets = []
-    for k in res["assets"]:
-        assets.append({"tokenId": k, "amount": res["assets"][k]})
+    for element in res["assets"]:
+        for k in element:
+            assets.append({"tokenId": k, "amount": element[k]})
 
     return   {
         "boxId": res["box_id"],
@@ -56,8 +57,9 @@ async def get_utxo_by_ergotree(ergoTree: ErgoTreeHex,  offset: int = 0, limit: i
 
     for row in res:
         assets = []
-        for k in row["assets"]:
-            assets.append({"tokenId": k, "amount": row["assets"][k]})
+        for element in row["assets"]:
+            for k in element:
+                assets.append({"tokenId": k, "amount": element[k]})
         result.append({
                 "boxId": row["box_id"],
                 "value": row["nergs"],
