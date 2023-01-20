@@ -17,8 +17,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    pass
+    op.add_column('utxos', sa.Column('index', sa.INTEGER(), nullable=True))
+    op.create_index('idx_utxos_ergo_tree', 'utxos', ['ergo_tree'], unique=False)
 
 
 def downgrade() -> None:
-    pass
+    op.drop_index('idx_utxos_ergo_tree')
+    op.drop_column('utxos', 'index')
