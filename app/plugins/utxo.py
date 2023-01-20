@@ -28,7 +28,7 @@ async def checkpoint(utxos):
         addr_converter = {}
 
         # utxos
-        contents = {'box_id': [], 'ergo_tree': [], 'address': [], 'nergs': [], 'registers': [], 'assets': [], 'transaction_id': [], 'index': [], 'creation_height': [], 'height': []}
+        contents = {'box_id': [], 'ergo_tree': [], 'address': [], 'nergs': [], 'registers': [], 'assets': [], 'transaction_id': [], 'box_index': [], 'creation_height': [], 'height': []}
         for box_id, content in utxos.items():
             contents['box_id'].append(box_id)
             contents['ergo_tree'].append(content['ergo_tree'])
@@ -44,7 +44,7 @@ async def checkpoint(utxos):
             contents['registers'].append(json.dumps(content['registers']))
             contents['assets'].append(json.dumps(content['assets']))
             contents['transaction_id'].append(json.dumps(content['transaction_id']))
-            contents['index'].append(json.dumps(content['index']))
+            contents['box_index'].append(json.dumps(content['index']))
             contents['creation_height'].append(json.dumps(content['creation_height']))
             contents['height'].append(content['height'])
         df_box_contents = pd.DataFrame().from_dict(contents)
@@ -62,7 +62,7 @@ async def checkpoint(utxos):
                         , trim(both '"' from registers::text)::hstore as registers
                         , trim(both '"' from assets::text)::hstore as assets
                         , trim(both '"' from transaction_id::text)::varchar(64) as transaction_id
-                        , index::int
+                        , box_index::int as index
                         , creation_height::int
                         , height::int
                     from checkpoint.utxos
