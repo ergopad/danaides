@@ -65,7 +65,7 @@ async def checkpoint(utxos):
                         , box_index::int as index
                         , creation_height::int
                         , height::int
-                        , '{{'||trim(both '"' from assets::text)||'}}'::hstore[] as assets_array
+                        , ('{{'||trim(both '"' from assets::text)||'}}')::hstore[] as assets_array
                     from checkpoint.utxos
             '''
             con.execute(sql)
