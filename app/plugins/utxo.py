@@ -106,7 +106,7 @@ async def get_all_unspent_boxes(boxes_tablename:str, box_override:str):
             select b.box_id, b.height
             from {boxes_tablename} b
                 left join utxos u on u.box_id = b.box_id
-            where u.box_id is null
+            where u.index is null
         ''')
         # find boxes from checkpoint or standard sql query
         if VERBOSE: logger.debug(sql)
