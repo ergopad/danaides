@@ -189,7 +189,7 @@ async def get_height(args, height: int=-1) -> int:
     else:
         # check existing height in audit_log
         sql = f'''
-            SELECT max(height)
+            SELECT max(height) as height
 	        FROM public.boxes
         '''
         with eng.begin() as con:

@@ -43,6 +43,7 @@ def get_tables(eng):
         Column('transaction_id', VARCHAR(64), nullable=True),
         Column('creation_height', INTEGER, nullable=True),
         Column('height', INTEGER, nullable=False),
+        Column('index', INTEGER, nullable=true)
     )
 
     TABLES['prices'] = Table('prices', metadata_obj,
