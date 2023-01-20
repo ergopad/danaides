@@ -18,7 +18,7 @@ class ErgoTreeHex(BaseModel):
 @r.get("/{box_id}")
 async def get_utxo_by_id(box_id: str):
     sql = text(f'''
-        select id, box_id, ergo_tree, address, nergs, hstore_to_json_loose(registers) as registers, hstore_to_json_loose(assets) as assets, transaction_id, creation_height, height
+        select id, box_id, ergo_tree, address, nergs, hstore_to_json_loose(registers) as registers, hstore_to_json_loose(assets) as assets, transaction_id, index, creation_height, height
         from utxos 
         where box_id = :box_id
     ''')
@@ -37,13 +37,13 @@ async def get_utxo_by_id(box_id: str):
         "assets": assets,
         "additionalRegisters": res["registers"],
         "transactionId": res["transaction_id"],
-        "index": 0
+        "index": res["index"]
     }
 
 @r.post("/byErgoTree")
 async def get_utxo_by_ergotree(ergoTree: ErgoTreeHex,  offset: int = 0, limit: int = 100):
     sql = text(f'''
-        select id, box_id, ergo_tree, address, nergs, hstore_to_json_loose(registers) as registers, hstore_to_json_loose(assets) as assets, transaction_id, creation_height, height
+        select id, box_id, ergo_tree, address, nergs, hstore_to_json_loose(registers) as registers, hstore_to_json_loose(assets) as assets, transaction_id, index, creation_height, height
         from utxos 
         where ergo_tree = :ergo_tree
         order by id asc
@@ -66,7 +66,7 @@ async def get_utxo_by_ergotree(ergoTree: ErgoTreeHex,  offset: int = 0, limit: i
                 "assets": assets,
                 "additionalRegisters": row["registers"],
                 "transactionId": row["transaction_id"],
-                "index": 0
+                "index": res["index"]
             })
 
     return result

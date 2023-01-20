@@ -28,7 +28,7 @@ async def checkpoint(utxos):
         addr_converter = {}
 
         # utxos
-        contents = {'box_id': [], 'ergo_tree': [], 'address': [], 'nergs': [], 'registers': [], 'assets': [], 'transaction_id': [], 'creation_height': [], 'height': []}
+        contents = {'box_id': [], 'ergo_tree': [], 'address': [], 'nergs': [], 'registers': [], 'assets': [], 'transaction_id': [], 'index': [], 'creation_height': [], 'height': []}
         for box_id, content in utxos.items():
             contents['box_id'].append(box_id)
             contents['ergo_tree'].append(content['ergo_tree'])
@@ -44,6 +44,7 @@ async def checkpoint(utxos):
             contents['registers'].append(json.dumps(content['registers']))
             contents['assets'].append(json.dumps(content['assets']))
             contents['transaction_id'].append(json.dumps(content['transaction_id']))
+            contents['index'].append(json.dumps(content['index']))
             contents['creation_height'].append(json.dumps(content['creation_height']))
             contents['height'].append(content['height'])
         df_box_contents = pd.DataFrame().from_dict(contents)
@@ -52,7 +53,7 @@ async def checkpoint(utxos):
         # utxos
         with eng.begin() as con:
             sql = f'''
-                insert into utxos (box_id, ergo_tree, address, nergs, registers, assets, transaction_id, creation_height, height)
+                insert into utxos (box_id, ergo_tree, address, nergs, registers, assets, transaction_id, index, creation_height, height)
                     select 
                         box_id::varchar(64)
                         , ergo_tree::text
@@ -61,6 +62,7 @@ async def checkpoint(utxos):
                         , trim(both '"' from registers::text)::hstore as registers
                         , trim(both '"' from assets::text)::hstore as assets
                         , trim(both '"' from transaction_id::text)::varchar(64) as transaction_id
+                        , index::int
                         , creation_height::int
                         , height::int
                     from checkpoint.utxos
@@ -183,7 +185,7 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                     logger.debug(f'Boxes: {box_count-1}; UTXOs: {len(utxo)-1}')
 
                     # fetch box info
-                    for ergo_tree, box_id, box_assets, registers, nergs, creation_height, transaction_id, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[2]['value'], u[2]['creationHeight'], u[2]['transactionId'], u[1]] for u in utxo if u[0] == 200]:
+                    for ergo_tree, box_id, box_assets, registers, nergs, creation_height, transaction_id, index, height in [[u[2]['ergoTree'], u[2]['boxId'], u[2]['assets'], u[2]['additionalRegisters'], u[2]['value'], u[2]['creationHeight'], u[2]['transactionId'], u[2]['index'], u[1]] for u in utxo if u[0] == 200]:
                         if VERBOSE: logger.warning(f'box_id: {box_id}')
                         try:
                             # track largest height processed
@@ -205,6 +207,7 @@ async def process(is_plugin:bool=False, args=None):# boxes_tablename:str='boxes'
                                 'registers': ','.join([f'''{i}=>{j}''' for i, j in registers.items()]),
                                 'assets': ','.join([f'''{a['tokenId']}=>{a['amount']}''' for a in box_assets]),
                                 'transaction_id': transaction_id,
+                                'index': index,
                                 'creation_height': creation_height,
                                 'height': height,
                             }          
