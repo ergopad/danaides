@@ -195,7 +195,7 @@ async def get_height(args, height: int=-1) -> int:
         with eng.begin() as con:
             ht = con.execute(sql).fetchone()
         if ht is not None:
-            height = ht['height']+1
+            height = ht['height']
             logger.info(f'''Existing boxes found, starting at {height}...''')
             return height
 
