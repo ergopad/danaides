@@ -231,7 +231,7 @@ async def process(args, t, height: int=-1) -> dict:
             next_height = last_height+FETCH_INTERVAL
             if next_height > current_height:
                 next_height = current_height
-            batch_order = range(last_height, next_height)
+            batch_order = range(last_height, next_height+1)
 
             # find block headers
             suffix = f'''BLOCKS: {last_height}-{next_height} / {current_height}'''
