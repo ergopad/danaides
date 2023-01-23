@@ -27,6 +27,7 @@ PRETTYPRINT = False
 VERBOSE = False
 NERGS2ERGS = 10**9
 TOKENS = 'tokens'
+#endregion
 
 # extract tokens from the bolckchain
 async def process(transactions: dict, tokens: dict, height: int, is_plugin: bool=False, args=None) -> dict:
@@ -91,7 +92,7 @@ async def del_inputs(inputs: dict, unspent: dict, height: int=-1) -> dict:
                     'nergs': 0
                 }
             except Exception as e:
-                BLIPS.append({'box_id': box_id, 'height': height, 'msg': f'cant remove'})
+                #BLIPS.append({'box_id': box_id, 'height': height, 'msg': f'cant remove'})
                 if VERBOSE: logger.warning(f'cant find {box_id} at height {height} while removing from unspent {e}')
         return new
 
@@ -114,7 +115,7 @@ async def add_outputs(outputs: dict, unspent: dict, height: int) -> dict:
                     'nergs': nergs
                 }
             except Exception as e:
-                BLIPS.append({'box_id': box_id, 'height': height, 'msg': f'cant add'})
+                #BLIPS.append({'box_id': box_id, 'height': height, 'msg': f'cant add'})
                 if VERBOSE: logger.warning(f'{box_id} exists at height {height} while adding to unspent {e}')
         return new
 
