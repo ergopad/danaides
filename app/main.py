@@ -189,16 +189,13 @@ async def get_height(args, height: int=-1) -> int:
     else:
         # check existing height in audit_log
         sql = f'''
-            select height 
-            from audit_log 
-            where service in ('{BOXES}')
-            order by created_at desc 
-            limit 1
+            SELECT max(height) as height
+	        FROM public.boxes
         '''
         with eng.begin() as con:
             ht = con.execute(sql).fetchone()
         if ht is not None:
-            height = ht['height']+1
+            height = ht['height']
             logger.info(f'''Existing boxes found, starting at {height}...''')
             return height
 
@@ -234,7 +231,7 @@ async def process(args, t, height: int=-1) -> dict:
             next_height = last_height+FETCH_INTERVAL
             if next_height > current_height:
                 next_height = current_height
-            batch_order = range(last_height, next_height)
+            batch_order = range(last_height, next_height+1)
 
             # find block headers
             suffix = f'''BLOCKS: {last_height}-{next_height} / {current_height}'''
@@ -573,4 +570,4 @@ if __name__ == '__main__':
     app.stop()
     try: sys.exit(0)
     except SystemExit: os._exit(0)            
-#region MAIN
+#endregion MAIN

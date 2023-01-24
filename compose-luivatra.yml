@@ -48,8 +48,8 @@ services:
     depends_on:
       danaides-db:
         condition: service_healthy
-      danaides-alembic:
-        condition: service_completed_successfully
+#      danaides-alembic:
+#        condition: service_completed_successfully
     command: uvicorn api:app --workers 5 --host 0.0.0.0 --port 7000 --proxy-headers --use-colors
     # command: tail /dev/null -f
 
@@ -68,11 +68,11 @@ services:
       timeout: 5s
       retries: 5
     volumes: 
-      - postgres_vol:/var/lib/postgresql/data:cached
+      - ./postgres_vol:/var/lib/postgresql/data:cached
       - ./app/sql/config/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports: 
       # can use this or an disable service if existing db
-      - 5435:5432
+      - ${POSTGRES_PORT}:5432
     networks:
       - net
       # - ergopad-net # join existing network
@@ -90,7 +90,7 @@ services:
     depends_on:
       danaides-db:
         condition: service_healthy
-    #command: tail /dev/null -f
+    # command: tail /dev/null -f
     command: alembic upgrade head
 
 volumes:

@@ -18,6 +18,7 @@ from typing import Dict
 from routes.snapshot import snapshot_router
 from routes.token import token_router
 from routes.tasks import tasks_router
+from routes.utxo import utxo_router
 # from routes.dashboard import dashboard_router
 
 app = FastAPI(
@@ -43,6 +44,7 @@ jobs: Dict[UUID, Job] = {}
 app.include_router(snapshot_router, prefix="/api/snapshot", tags=["snapshot"])
 app.include_router(token_router, prefix="/api/token", tags=["token"])
 app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(utxo_router, prefix="/api/utxo", tags=["utxo"])
 # app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"]) #, dependencies=[Depends(get_current_active_user)])
 #endregion Routers
 
