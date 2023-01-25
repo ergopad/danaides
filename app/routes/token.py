@@ -74,7 +74,7 @@ async def exists(tid: AddressTokens):
                 where address in ({addresses})
             )
             select adr, tkn, sum(qty::float)/power(10, t.decimals) as qty
-            from tot
+            from tot left join tokens as "t" on t.token_id = tkn
             where tkn in ({tokens})
             group by adr, tkn, t.decimals
         ''')
