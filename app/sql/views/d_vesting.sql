@@ -26,7 +26,7 @@ create materialized view vesting as
 			, (each(assets)).key::varchar(64) as token_id
 			, (each(assets)).value::bigint as amount
 		from utxos
-		where address != '' -- only wallets; no smart contracts
+		--where address != '' -- only wallets; no smart contracts
 	)
 	-- insert into {tbl} (box_id, vesting_key_id, parameters, token_id, remaining, address, ergo_tree)
 	select v.box_id
