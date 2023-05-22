@@ -26,7 +26,7 @@ create materialized view token_status as
 	union select 'egio' as token_name, egio_st.r4 as str4, egio_pl.r4 as plr4, 4 from egio_st, egio_pl
 	union select 'egiov2' as token_name, egiov2_st.r4 as str4, egiov2_pl.r4 as plr4, 4 from egiov2_st, egiov2_pl
 	union select 'neta' as token_name, neta_st.r4 as str4, neta_pl.r4 as plr4, 6 from neta_st, neta_pl
-	union select 'aht' as token_name, aht_st.r4 as str4, aht_pl.r4 as plr4, 6 from aht_st, aht_pl
+	union select 'aht' as token_name, aht_st.r4 as str4, aht_pl.r4 as plr4, 4 from aht_st, aht_pl
 
     with no data;
 
